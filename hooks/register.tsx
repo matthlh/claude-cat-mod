@@ -211,7 +211,10 @@ function sceneSvg(scene: Scene): string {
 
 const PX = 3 // CSS pixels per sprite pixel
 const CAT_W = SPRITE_W * PX // 36
-const LANE_H = 30
+const CAT_H = 30
+// Room above the cat so hops and bounces don't clip its head.
+const HEADROOM = 8
+const LANE_H = CAT_H + HEADROOM
 // The desktop reports its width in monospace columns; the SVG wants pixels.
 const DESKTOP_PX_PER_COLUMN = 8.4
 const MAX_X = 85 // the cat's left edge travels 0%..85% of the lane
@@ -283,7 +286,7 @@ function floaters(c: Cat, isNapping: boolean): string {
   // Little particles that drift up from the cat's head.
   const drift = (glyph: string, x: number, delay: number, color: string, size: number) =>
     `<text x="${x}" y="8" font-size="${size}" fill="${color}" opacity="0">${glyph}
-      <animate attributeName="y" values="8;-6" dur="1.6s" begin="${delay}s" repeatCount="indefinite"/>
+      <animate attributeName="y" values="8;-2" dur="1.6s" begin="${delay}s" repeatCount="indefinite"/>
       <animate attributeName="opacity" values="0;1;0" dur="1.6s" begin="${delay}s" repeatCount="indefinite"/>
     </text>`
   if (isNapping) return drift('z', 24, 0, hex(QUIET_COLOR), 9) + drift('Z', 30, 0.8, hex(QUIET_COLOR), 11)
@@ -303,11 +306,11 @@ function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: numbe
     const spin = walking
       ? `<animateTransform attributeName="transform" type="rotate" from="0 ${s / 2} ${s / 2}" to="${dir * 360} ${s / 2} ${s / 2}" dur="0.7s" repeatDur="${Math.round(remaining)}ms"/>`
       : ''
-    return `<g transform="translate(${x} ${LANE_H - s})"><g>${spin}${rects(YARN, TOYS)}</g></g>`
+    return `<g transform="translate(${x} ${CAT_H - s})"><g>${spin}${rects(YARN, TOYS)}</g></g>`
   }
   if (m.activity === 'mouse') {
     const w = 7 * PX
-    return `<g transform="translate(${ahead(w) - dir * 6} ${LANE_H - 4 * PX})">${frames(rects(flip(MOUSE_A), TOYS), rects(flip(MOUSE_B), TOYS), 0.16, until)}</g>`
+    return `<g transform="translate(${ahead(w) - dir * 6} ${CAT_H - 4 * PX})">${frames(rects(flip(MOUSE_A), TOYS), rects(flip(MOUSE_B), TOYS), 0.16, until)}</g>`
   }
   if (m.activity === 'butterfly') {
     const w = 5 * PX
@@ -365,7 +368,7 @@ export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Sce
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${LANE_H}" overflow="visible" style="background:transparent">
   <style>:root{color-scheme:light dark;background:transparent}</style>
   ${sceneSvg(scene)}
-  <svg x="${pct(cur)}" y="0" width="${CAT_W}" height="${LANE_H}" overflow="visible">${glide}
+  <svg x="${pct(cur)}" y="${HEADROOM}" width="${CAT_W}" height="${CAT_H}" overflow="visible">${glide}
     <g shape-rendering="crispEdges">
       ${now < m.t0 + m.dur || !walking ? companionSvg(m, dir, walking, remaining) : ''}
       <g>${bounce}${body}</g>
@@ -439,7 +442,7 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
   else if (pose === 'walk') rows = Math.floor(now / (c.mood === 'working' || m.activity === 'mouse' ? 100 : 160)) % 2 ? WALK_B : WALK_A
   else rows = Math.floor(now / 600) % 2 ? SIT_WAG : SIT
   if (pose !== 'loaf' && (isHappy(c.mood) || now % 4000 > 3850)) rows = closeEyes(rows)
-  const hop = walking && m.activity === 'hop' && Math.floor(now / 225) % 2 ? -2 : 0
+  const hop = walking && m.activity === 'hop' && Math.floor(now / 225) % 2 ? 1 : 0
   plot(flip(rows), cx, hop, pal)
 
   // Companions ahead of the cat.
