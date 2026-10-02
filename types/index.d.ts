@@ -7,6 +7,8 @@ export type Cat = {
   say: string | null
   /** when the current line started, in ms, for the typewriter reveal */
   sayAt?: number
+  /** when it last woke from a proper sleep, so the perch can slide away */
+  wokeAt?: number
 }
 
 /**
@@ -21,9 +23,17 @@ export type Motion = {
   dur: number
   /** what the cat is up to on this leg; absent is a plain walk or pause */
   activity?: Activity
+  /** laser: how many more zips follow this one */
+  chain?: number
+  /** fish: whether this fishing trip ends with a catch */
+  hit?: boolean
 }
 
-export type Activity = 'walk' | 'sit' | 'nap' | 'hop' | 'yarn' | 'mouse' | 'butterfly'
+export type Activity =
+  | 'walk' | 'sit' | 'nap' | 'hop' | 'yarn' | 'mouse' | 'butterfly'
+  | 'caught' | 'bird' | 'flyaway' | 'fish' | 'laser'
+  // bedtime: walking to the perch, then asleep on it
+  | 'bed' | 'perch'
 
 export type Limits = {
   fiveHour: number | null

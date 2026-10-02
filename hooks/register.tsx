@@ -52,7 +52,8 @@ const TIRED_PACE = 0.025
 
 // How often each idle activity comes up (relative weights).
 const IDLE_ACTIVITIES: [Activity, number][] = [
-  ['walk', 26], ['sit', 16], ['nap', 14], ['hop', 9], ['yarn', 12], ['mouse', 11], ['butterfly', 12],
+  ['walk', 22], ['sit', 13], ['nap', 12], ['hop', 8], ['yarn', 10], ['mouse', 10], ['butterfly', 9],
+  ['fish', 9], ['bird', 8], ['laser', 7],
 ]
 const TIRED_ACTIVITIES: [Activity, number][] = [['walk', 25], ['sit', 30], ['nap', 45]]
 
@@ -70,7 +71,24 @@ const LINES: Partial<Record<Activity, string[]>> = {
   mouse: ['a mouse!', 'get back here', 'hunting…'],
   butterfly: ['ooh', 'pretty…', 'hi butterfly'],
   hop: ['wheee', 'boing boing'],
+  fish: ['fishing…', 'fishy fishy', 'shh, fish'],
+  bird: ['shhh…', 'birb.', 'stalking…'],
+  laser: ['THE DOT', 'red dot!!', 'gotta get it'],
+  caught: ['got it!', 'gotcha!'],
+  flyaway: ['nom?!', 'nom nom'],
 }
+
+// Activities that happen on the spot, and how long they last (ms).
+function stillFor(a: Activity): number | null {
+  if (a === 'sit') return 2000 + Math.random() * 4000
+  if (a === 'nap') return 15_000 + Math.random() * 30_000
+  if (a === 'fish') return 7000 + Math.random() * 4000
+  if (a === 'caught' || a === 'flyaway') return 3000
+  return null
+}
+
+// Activities with a toy or critter ahead of the cat.
+const WITH_COMPANION = new Set<Activity | undefined>(['yarn', 'mouse', 'butterfly', 'bird', 'laser', 'fish', 'caught', 'flyaway'])
 
 function cycle<T>(list: T[], v: T): T {
   return list[(list.indexOf(v) + 1) % list.length]
@@ -108,6 +126,8 @@ const WALK_A = [...HEAD, '.ooooooo...d', '..owwwooo.d.', '..oooooooo..', '..oo..
 const WALK_B = [...HEAD, '.ooooooo...d', '..owwwooo.d.', '..oooooooo..', '...oo.oo....']
 const SIT = [...HEAD, '.ooooooo....', '.owwwooo.d..', '.oowwooood..', '..oo..oo....']
 const SIT_WAG = [...HEAD, '.ooooooo..d.', '.owwwooo.d..', '.oowwooood..', '..oo..oo....']
+// One front paw reaching out (for fishing and pinning a mouse).
+const SIT_PAW = [...HEAD, '.ooooooo....', 'oowwwooo.d..', '.oowwooood..', '......oo....']
 const LOAF = [
   '............',
   '............',
@@ -164,7 +184,18 @@ const MOUSE_A = ['.gg....', 'gKgggg.', '.gggggt', '..g.g..']
 const MOUSE_B = ['.gg....', 'gKgggg.', '.gggggt', '.g...g.']
 const FLY_OPEN = ['BB.BB', 'BBkBB', '.BkB.']
 const FLY_SHUT = ['.BkB.', '.BkB.', '..k..']
+// b bird, p beak, q legs; f fish, F fin.
+const BIRD = ['.bb..', 'pbbbb', '.bbb.', '..q..']
+const BIRD_PECK = ['.....', '.bb..', 'pbbbb', '.bbq.']
+const BIRD_UP = ['.b.b.', 'pbbbb', '..bb.', '.....']
+const BIRD_DOWN = ['.....', 'pbbbb', 'bb.bb', '.....']
+const FISH = ['fffF', '.ffF']
 const TOYS: Palette = {
+  b: 0x9c7a5b,
+  p: 0xf2b544,
+  q: 0x5d4037,
+  f: 0xf2994a,
+  F: 0xf7c59f,
   y: 0xe0566b,
   Y: 0xf5a3ae,
   g: 0xa7adb4,
@@ -174,8 +205,60 @@ const TOYS: Palette = {
   k: 0x2b2840,
 }
 
+// Fishing spots: G glass, W water, w ripple, s sand, P plant, k stand.
+type Prop = { rows: string[]; swim?: [number, number, number] } // fish x range and row
+const PROPS: Record<'bowl' | 'tank' | 'river', Prop> = {
+  bowl: { rows: ['.G....G.', 'G......G', 'GWWWWWWG', 'GWWWWWWG', 'GWWWWWWG', '.GWWWWG.', '..GGGG..'], swim: [1, 3, 3] },
+  tank: {
+    rows: ['GGGGGGGGGG', 'G........G', 'GWWWWWWWWG', 'GWWWWWWWWG', 'GWWWWWWPWG', 'GWWWWWPWWG', 'GssssssPsG', 'kkkkkkkkkk'],
+    swim: [1, 5, 3],
+  },
+  river: { rows: ['..WwWWWWWwWW..', '.WWWWWwWWWWWW.', 'WWWWWWWWWWWWWW'] },
+}
+const PROP_PAL: Palette = { G: 0xcfe8f3, W: 0x3f8fd6, w: 0x9fd0f5, s: 0xe3c78a, P: 0x4caf50, k: 0x5a4a3f }
+const SCENE_PROP: Record<Scene, keyof typeof PROPS> = { clear: 'bowl', cozy: 'tank', grass: 'river', night: 'river' }
+
+// Where the cat sleeps, by scene. Hidden until bedtime, when it slides in
+// from the left; `float` lifts it off the ground (the night cloud).
+type Perch = { rows: string[]; pal: Palette; float: number }
+const PERCHES: Record<Scene, Perch> = {
+  clear: {
+    rows: ['.cccccccccccccc.', 'cCCCCCCCCCCCCCCc', 'cccccccccccccccc', '.cccccccccccccc.'],
+    pal: { c: 0x6f63c9, C: 0xb3a9f0 },
+    float: 0,
+  },
+  grass: {
+    rows: ['.SSSSSSSSSS.', 'TTTTTTTTTTTT', '.TTtTTTTtTT.', '.TTTTtTTTTT.', 'TTTTTTTTTTTT'],
+    pal: { S: 0xc79a6b, T: 0x7a5234, t: 0x5b3a22 },
+    float: 0,
+  },
+  night: {
+    rows: ['...LLL....LL....', '.LLLLLLLLLLLLL..', 'LLLLLLLLLLLLLLLL', '.llllllllllllll.'],
+    pal: { L: 0xe6e9f7, l: 0xaab1cf },
+    float: 5,
+  },
+  cozy: {
+    rows: ['PPPPPPPPPPPPPP', 'pppppppppppppp', '.....RRRR.....', '.....RrRR.....', '.....RRrR.....', '..pppppppppp..'],
+    pal: { P: 0xc9876b, p: 0x9a5f49, R: 0xd9c08f, r: 0xb39a6a },
+    float: 0,
+  },
+}
+const SLIDE_MS = 700
+
+function isOnPerch(c: Cat, m: Motion): boolean {
+  return c.mood === 'sleep' && m.activity === 'perch'
+}
+
+// How far the perch has slid in (1) or out (0), or null when it's away.
+function perchShown(c: Cat, m: Motion, now: number): number | null {
+  if (c.mood === 'sleep' && m.activity === 'bed') return clamp01((now - m.t0) / SLIDE_MS)
+  if (isOnPerch(c, m)) return 1
+  if (c.mood !== 'sleep' && c.wokeAt !== undefined && now - c.wokeAt < SLIDE_MS) return 1 - clamp01((now - c.wokeAt) / SLIDE_MS)
+  return null
+}
+
 function posture(c: Cat, m: Motion, now: number): 'walk' | 'sit' | 'loaf' {
-  if (c.mood === 'sleep') return 'loaf'
+  if (c.mood === 'sleep') return isWalking(m, now) ? 'walk' : 'loaf'
   if (isWalking(m, now)) return 'walk'
   return m.activity === 'nap' && now < m.t0 + m.dur ? 'loaf' : 'sit'
 }
@@ -218,6 +301,7 @@ const LANE_H = CAT_H + HEADROOM
 // The desktop reports its width in monospace columns; the SVG wants pixels.
 const DESKTOP_PX_PER_COLUMN = 8.4
 const MAX_X = 85 // the cat's left edge travels 0%..85% of the lane
+const PERCH_X = 4
 
 function xmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -294,12 +378,33 @@ function floaters(c: Cat, isNapping: boolean): string {
   return ''
 }
 
+const BOB = '<animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0" dur="3s" repeatCount="indefinite"/>'
+
+// The perch, sliding in at bedtime and out on waking, in lane coordinates.
+function perchSvg(c: Cat, m: Motion, now: number, scene: Scene): string {
+  const shown = perchShown(c, m, now)
+  if (shown === null) return ''
+  const p = PERCHES[scene]
+  const w = p.rows[0].length * PX
+  const y = HEADROOM + CAT_H - p.rows.length * PX - p.float
+  const away = -(PERCH_X + w + 4)
+  const isLeaving = c.mood !== 'sleep'
+  const since = isLeaving ? (c.wokeAt ?? now) : m.t0
+  const slide = now - since < SLIDE_MS
+    ? `<animateTransform attributeName="transform" type="translate" from="${isLeaving ? 0 : away} 0" to="${isLeaving ? away : 0} 0" dur="${SLIDE_MS}ms" begin="${Math.round(since - now)}ms" fill="freeze"/>`
+    : ''
+  return `<g transform="translate(${PERCH_X} ${y})"><g>${slide}<g>${p.float ? BOB : ''}<g shape-rendering="crispEdges">${rects(p.rows, p.pal)}</g></g></g></g>`
+}
+
 // The toy or critter on this leg, in the cat's own coordinates (0..36),
-// placed ahead of the cat in the direction it faces.
-function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: number): string {
+// placed ahead of the cat in the direction it faces. One-shot animations
+// start at the leg's start (a negative begin), so a redraw mid-leg picks
+// them up where they were.
+function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: number, now: number, scene: Scene): string {
   const ahead = (w: number) => (dir === 1 ? CAT_W + 3 : -w - 3)
   const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
   const until = walking ? remaining : undefined
+  const at = (ms: number) => `${Math.round(m.t0 + ms - now)}ms`
   if (m.activity === 'yarn') {
     const s = 5 * PX
     const x = ahead(s)
@@ -319,25 +424,94 @@ function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: numbe
       ${frames(rects(FLY_OPEN, TOYS), rects(FLY_SHUT, TOYS), 0.25)}
     </g></g>`
   }
+  if (m.activity === 'laser') {
+    return `<g transform="translate(${ahead(6) + 3} ${CAT_H - 3})"><g>
+      <animateTransform attributeName="transform" type="translate" values="0 0;3 -2;-2 1;2 2;-3 -1;0 0" dur="0.5s" repeatCount="indefinite"/>
+      <circle r="4.5" fill="#ff3b3b" opacity="0.3"/><circle r="1.8" fill="#ff6060"/>
+    </g></g>`
+  }
+  if (m.activity === 'caught') {
+    // Pinned under a paw, wriggling, then it slips free and scurries off.
+    return `<g transform="translate(${ahead(7 * PX) + dir * 2} ${CAT_H - 4 * PX})"><g>
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 0;${dir * 140} 0" keyTimes="0;0.72;1" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+      <animate attributeName="opacity" values="1;1;0" keyTimes="0;0.85;1" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+      ${frames(rects(flip(MOUSE_A), TOYS), rects(flip(MOUSE_B), TOYS), 0.16)}
+    </g></g>`
+  }
+  if (m.activity === 'flyaway') {
+    // Gone in the pounce ("nom?!"), then it bursts out and flies away.
+    return `<g transform="translate(${ahead(5 * PX)} ${CAT_H - 4 * PX})"><g>
+      <animateTransform attributeName="transform" type="translate" values="0 0;0 0;${dir * 90} -70" keyTimes="0;0.53;1" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+      <animate attributeName="opacity" values="1;0;0;1;1;0" keyTimes="0;0.12;0.52;0.54;0.92;1" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+      ${frames(rects(flip(BIRD_UP), TOYS), rects(flip(BIRD_DOWN), TOYS), 0.18)}
+    </g></g>`
+  }
+  if (m.activity === 'fish') {
+    const prop = PROPS[SCENE_PROP[scene]]
+    const w = prop.rows[0].length * PX
+    const h = prop.rows.length * PX
+    const x = dir === 1 ? CAT_W + 2 : -w - 2
+    const k = Math.min(0.2, 400 / m.dur).toFixed(3)
+    let fish: string
+    if (prop.swim) {
+      const [x0, x1, y] = prop.swim
+      fish = `<g transform="translate(${x0 * PX} ${y * PX})"><g>
+        <animateTransform attributeName="transform" type="translate" values="0 0;${(x1 - x0) * PX} 0;0 0" dur="3s" repeatCount="indefinite"/>
+        ${rects(FISH, TOYS)}</g></g>`
+    } else {
+      // A fish leaps out of the river now and then.
+      fish = `<g opacity="0" transform="translate(${w / 2 - 8} 0)"><g>
+        <animateTransform attributeName="transform" type="translate" values="0 ${h};5 -12;10 ${h};10 ${h}" keyTimes="0;0.18;0.36;1" dur="2.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;1;1;0;0" keyTimes="0;0.04;0.32;0.36;1" dur="2.5s" repeatCount="indefinite"/>
+        ${rects(FISH, TOYS)}</g></g>`
+    }
+    // A catch: in the last moment a fish leaps up into the cat's paws.
+    const mouthX = (dir === 1 ? 26 : 2) - x
+    const hit = m.hit
+      ? `<g opacity="0" transform="translate(${w / 2 - 6} ${h - 6})"><g>
+        <animateTransform attributeName="transform" type="translate" values="0 0;${mouthX / 2} -24;${mouthX} -${h - 18}" dur="0.9s" begin="${at(m.dur - 1200)}" fill="freeze"/>
+        <animate attributeName="opacity" values="1;1;0" keyTimes="0;0.85;1" dur="0.9s" begin="${at(m.dur - 1200)}" fill="freeze"/>
+        ${rects(FISH, TOYS)}</g></g>`
+      : ''
+    return `<g transform="translate(${x} ${CAT_H - h})"><g opacity="0">
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;${k};${(1 - Number(k)).toFixed(3)};1" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+      ${rects(prop.rows, PROP_PAL)}${fish}</g>${hit}</g>`
+  }
   return ''
+}
+
+// A bird pecking at the spot the cat is creeping toward, in lane coordinates.
+function stalkedBirdSvg(m: Motion, dir: 1 | -1, now: number, pct: (p: number) => string): string {
+  if (m.activity !== 'bird' || now >= m.t0 + m.dur) return ''
+  const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
+  const x = dir === 1 ? CAT_W + 3 : -5 * PX - 3
+  return `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${CAT_W}" height="${CAT_H}" overflow="visible">
+    <g shape-rendering="crispEdges" transform="translate(${x} ${CAT_H - 4 * PX})">${frames(rects(flip(BIRD), TOYS), rects(flip(BIRD_PECK), TOYS), 0.7)}</g>
+  </svg>`
 }
 
 export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Scene): string {
   const cur = posAt(m, now)
   const walking = isWalking(m, now)
+  const busy = now < m.t0 + m.dur
   const remaining = walking ? m.t0 + m.dur - now : 0
   const dir = m.to > m.from && walking ? 1 : m.to < m.from && walking ? -1 : c.dir
   const pct = (p: number) => `${(clamp01(p) * MAX_X).toFixed(3)}%`
   const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
   const pose = posture(c, m, now)
   const eyes = (rows: string[]) => (isHappy(c.mood) ? closeEyes(rows) : rows)
+  const at = (ms: number) => `${Math.round(m.t0 + ms - now)}ms`
 
   let body: string
   if (pose === 'loaf') {
     body = rects(flip(LOAF.map(r => r.replace(/[HK]/g, 'd'))), pal)
   } else if (pose === 'walk') {
-    const legs = c.mood === 'working' || m.activity === 'mouse' ? 0.2 : 0.32
+    const legs = c.mood === 'working' || m.activity === 'mouse' || m.activity === 'laser' ? 0.2 : m.activity === 'bird' ? 0.6 : 0.32
     body = frames(rects(flip(eyes(WALK_A)), pal), rects(flip(eyes(WALK_B)), pal), legs, remaining)
+  } else if (busy && m.activity === 'fish') {
+    body = frames(rects(flip(eyes(SIT)), pal), rects(flip(eyes(SIT_PAW)), pal), 1)
+  } else if (busy && m.activity === 'caught') {
+    body = rects(flip(eyes(SIT_PAW)), pal)
   } else {
     body = frames(rects(flip(eyes(SIT)), pal), rects(flip(eyes(SIT_WAG)), pal), 1.2)
   }
@@ -348,33 +522,53 @@ export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Sce
     body += `<g opacity="0">${rects(shut, pal, open)}<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.95;0.98" dur="4s" calcMode="discrete" repeatCount="indefinite"/></g>`
   }
 
+  const isPounce = busy && !walking && (m.activity === 'caught' || m.activity === 'flyaway')
   const bounce = c.mood === 'oops'
     ? '<animateTransform attributeName="transform" type="translate" values="-2 0;2 0;-2 0" dur="0.12s" repeatCount="indefinite"/>'
     : c.mood === 'done'
       ? '<animateTransform attributeName="transform" type="translate" values="0 0;0 -4;0 0" dur="0.35s" repeatCount="3"/>'
       : walking && m.activity === 'hop'
         ? `<animateTransform attributeName="transform" type="translate" values="0 0;0 -7;0 0" keyTimes="0;0.4;1" dur="0.45s" repeatDur="${Math.round(remaining)}ms"/>`
-        : ''
+        : isPounce
+          ? `<animateTransform attributeName="transform" type="translate" values="0 0;${dir * 6} -7;${dir * 9} 0" keyTimes="0;0.5;1" dur="0.4s" begin="${at(0)}" fill="freeze"/>`
+          : ''
   const glide = walking
     ? `<animate attributeName="x" from="${pct(cur)}" to="${pct(m.to)}" dur="${Math.round(remaining)}ms" fill="freeze"/>`
     : ''
   const tint = MOOD_COLOR[c.mood] ?? QUIET_COLOR
-  const hasCompanion = m.activity === 'yarn' || m.activity === 'mouse' || m.activity === 'butterfly'
-  const bubbleLeft = hasCompanion && now < m.t0 + m.dur ? dir === 1 : Math.max(cur, m.to) > 0.55
+  const hasCompanion = WITH_COMPANION.has(m.activity) && busy
+  const bubbleLeft = hasCompanion ? dir === 1 && cur > 0.2 : Math.max(cur, m.to) > 0.55
   const isNapping = pose === 'loaf'
+
+  // On the perch: shifted onto it and lifted, after a little hop up.
+  let perchOpen = '<g><g><g>'
+  let floatX = 0
+  if (isOnPerch(c, m)) {
+    const p = PERCHES[scene]
+    const dx = PERCH_X + (p.rows[0].length * PX - CAT_W) / 2
+    const lift = (p.rows.length - 1) * PX + p.float
+    const hopUp = `<animateTransform attributeName="transform" type="translate" values="${-dx} ${lift};${-dx / 2} ${lift / 2 - 8};0 0" dur="0.35s" begin="${at(0)}" fill="freeze"/>`
+    perchOpen = `<g transform="translate(${dx} ${-lift})"><g>${p.float ? BOB : ''}<g>${hopUp}`
+    floatX = dx + 14 // z's drift beside the cat, not off the top of the lane
+  }
 
   // color-scheme lets the frame follow the app's light or dark appearance,
   // so a Clear lane stays see-through instead of a white page.
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${LANE_H}" overflow="visible" style="background:transparent">
   <style>:root{color-scheme:light dark;background:transparent}</style>
   ${sceneSvg(scene)}
+  ${perchSvg(c, m, now, scene)}
+  ${stalkedBirdSvg(m, dir, now, pct)}
   <svg x="${pct(cur)}" y="${HEADROOM}" width="${CAT_W}" height="${CAT_H}" overflow="visible">${glide}
+    ${perchOpen}
     <g shape-rendering="crispEdges">
-      ${now < m.t0 + m.dur || !walking ? companionSvg(m, dir, walking, remaining) : ''}
+      ${busy || !walking ? companionSvg(m, dir, walking, remaining, now, scene) : ''}
       <g>${bounce}${body}</g>
     </g>
-    ${floaters(c, isNapping)}
+    ${floatX ? '' : floaters(c, isNapping)}
     ${isNapping ? '' : bubbleSvg(c, bubbleLeft, tint)}
+    </g></g></g>
+    ${floatX ? `<g transform="translate(${floatX} 0)">${floaters(c, isNapping)}</g>` : ''}
   </svg>
 </svg>`
 }
@@ -430,28 +624,86 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
   }
 
   const walking = isWalking(m, now)
+  const busy = now < m.t0 + m.dur
+  const elapsed = now - m.t0
   const dir = m.to > m.from && walking ? 1 : m.to < m.from && walking ? -1 : c.dir
   const span = Math.max(0, cols - SPRITE_W - 1)
   const shake = c.mood === 'oops' ? (Math.floor(now / 120) % 2 ? 1 : -1) : 0
-  const cx = Math.max(0, Math.min(span, Math.round(posAt(m, now) * span) + shake))
+  let cx = Math.max(0, Math.min(span, Math.round(posAt(m, now) * span) + shake))
   const pose = posture(c, m, now)
   const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
 
+  // The perch slides in from the left at bedtime.
+  const perch = PERCHES[scene]
+  const pw = perch.rows[0].length
+  const ph = perch.rows.length
+  const shown = perchShown(c, m, now)
+  if (shown !== null) plot(perch.rows, Math.round(1 - (pw + 2) * (1 - shown)), PIX - ph - (perch.float ? 1 : 0), perch.pal)
+
   let rows: string[]
   if (pose === 'loaf') rows = LOAF.map(r => r.replace(/[HK]/g, 'd'))
-  else if (pose === 'walk') rows = Math.floor(now / (c.mood === 'working' || m.activity === 'mouse' ? 100 : 160)) % 2 ? WALK_B : WALK_A
+  else if (pose === 'walk') rows = Math.floor(now / (c.mood === 'working' || m.activity === 'mouse' || m.activity === 'laser' ? 100 : m.activity === 'bird' ? 300 : 160)) % 2 ? WALK_B : WALK_A
+  else if (busy && m.activity === 'caught') rows = SIT_PAW
+  else if (busy && m.activity === 'fish') rows = Math.floor(now / 500) % 2 ? SIT_PAW : SIT
   else rows = Math.floor(now / 600) % 2 ? SIT_WAG : SIT
   if (pose !== 'loaf' && (isHappy(c.mood) || now % 4000 > 3850)) rows = closeEyes(rows)
-  const hop = walking && m.activity === 'hop' && Math.floor(now / 225) % 2 ? 1 : 0
-  plot(flip(rows), cx, hop, pal)
+  let cy = walking && m.activity === 'hop' && Math.floor(now / 225) % 2 ? 1 : 0
+  if (busy && !walking && (m.activity === 'caught' || m.activity === 'flyaway') && elapsed > 200) {
+    cx = Math.max(0, Math.min(span, cx + dir * 2)) // pounced
+  }
+  if (isOnPerch(c, m)) {
+    cx = 1 + Math.floor((pw - SPRITE_W) / 2)
+    cy = -Math.min(4, ph - 1 + (perch.float ? 1 : 0))
+  }
+  plot(flip(rows), cx, cy, pal)
 
   // Companions ahead of the cat.
-  const busy = now < m.t0 + m.dur
   const ahead = (w: number) => (dir === 1 ? cx + SPRITE_W + 1 : cx - w - 1)
+  const wings = Math.floor(now / 180) % 2 ? BIRD_DOWN : BIRD_UP
   if (busy && m.activity === 'yarn') plot(YARN, ahead(5), PIX - 5, TOYS)
   if (busy && m.activity === 'mouse') plot(flip(Math.floor(now / 80) % 2 ? MOUSE_B : MOUSE_A), ahead(7) + dir * 2, PIX - 4, TOYS)
   if (busy && m.activity === 'butterfly') {
     plot(Math.floor(now / 250) % 2 ? FLY_SHUT : FLY_OPEN, ahead(5) + (Math.floor(now / 700) % 2), Math.floor(now / 500) % 2, TOYS)
+  }
+  if (busy && m.activity === 'laser') {
+    const j = [0, 1, -1, 1, 0, -1][Math.floor(now / 90) % 6]
+    plot(['L'], ahead(1) + j, PIX - 1 - (j === 1 ? 1 : 0), { L: 0xff3b3b })
+  }
+  if (busy && m.activity === 'bird') {
+    const tx = Math.round(m.to * span)
+    plot(flip(Math.floor(now / 350) % 2 ? BIRD_PECK : BIRD), dir === 1 ? tx + SPRITE_W + 1 : tx - 6, PIX - 4, TOYS)
+  }
+  if (busy && m.activity === 'caught') {
+    const run = elapsed > m.dur * 0.72 ? Math.round((elapsed - m.dur * 0.72) / 20) : 0
+    plot(flip(Math.floor(now / 80) % 2 ? MOUSE_B : MOUSE_A), ahead(7) - dir * 2 + dir * run, PIX - 4, TOYS)
+  }
+  if (busy && m.activity === 'flyaway') {
+    if (elapsed < 350) plot(flip(wings), ahead(5), PIX - 4, TOYS)
+    else if (elapsed > 1600) {
+      const k = (elapsed - 1600) / (m.dur - 1600)
+      plot(flip(wings), ahead(5) + dir * Math.round(k * 30), PIX - 4 - Math.round(k * 10), TOYS)
+    }
+  }
+  if (busy && m.activity === 'fish' && elapsed > 300 && elapsed < m.dur - 300) {
+    const prop = PROPS[SCENE_PROP[scene]]
+    const w = prop.rows[0].length
+    const h = prop.rows.length
+    const px = ahead(w)
+    plot(prop.rows, px, PIX - h, PROP_PAL)
+    if (prop.swim) {
+      const [x0, x1, y] = prop.swim
+      const t = (now % 3000) / 1500
+      plot(FISH, px + x0 + Math.round((t < 1 ? t : 2 - t) * (x1 - x0)), PIX - h + y, TOYS)
+    } else {
+      const phase = now % 2500
+      if (phase < 900) plot(FISH, px + Math.floor(w / 2) - 3 + Math.floor(phase / 300), PIX - 3 - Math.round(Math.sin((Math.PI * phase) / 900) * 5), TOYS)
+    }
+    const k = (elapsed - (m.dur - 1200)) / 900
+    if (m.hit && k >= 0 && k < 1) {
+      const sx = px + Math.floor(w / 2)
+      const ex = dir === 1 ? cx + 9 : cx + 1
+      plot(FISH, Math.round(sx + (ex - sx) * k), Math.round(PIX - h - Math.sin(Math.PI * k) * 4 + (4 - PIX + h) * k), TOYS)
+    }
   }
 
   const grid = new Uint32Array(cols * ROWS * 3)
@@ -473,7 +725,7 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
 
   if (pose === 'loaf') {
     const z = ['z', 'zZ', 'zZz', ' Zz', '  z'][Math.floor(now / 500) % 5]
-    const zx = dir === 1 ? cx + SPRITE_W : cx - 4
+    const zx = dir === 1 || isOnPerch(c, m) ? cx + SPRITE_W : cx - 4
     for (let i = 0; i < z.length; i++) put(zx + i, 1, z[i], QUIET_COLOR)
   }
 
@@ -482,7 +734,8 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
     const tint = MOOD_COLOR[c.mood] ?? QUIET_COLOR
     const bw = line.length + 4
     const right = cx + SPRITE_W + 1
-    const isLeft = right + bw > cols && cx - 1 - bw >= 0
+    const fitsLeft = cx - 1 - bw >= 0
+    const isLeft = fitsLeft && (right + bw > cols || (WITH_COMPANION.has(m.activity) && busy && dir === 1))
     const bx = isLeft ? cx - 1 - bw : right
     const text = isLeft ? line : line.slice(0, Math.max(0, cols - right - 4))
     const w = text.length + 4
@@ -536,6 +789,8 @@ export const register: Register = on => {
   let sayUntil = 0
   let moodUntil = 0
   const warned = new Set<string>()
+  // Lines queued for later in a leg ("hey!! come back" after the bird escapes).
+  let cues: { at: number; text: string }[] = []
   // Where the terminal lane is mounted, for in-place repaints.
   let site: { requestId: string; cols: number } | null = null
   // Assigned in session.start, where the timers live.
@@ -551,22 +806,43 @@ export const register: Register = on => {
     await update($, cat, c => ({ ...c, sayAt: lastActivity }))
 
     // A new leg: what the cat does next, where to, and for how long.
-    const plan = async (now: number, mood: Mood, from: number, activity: Activity) => {
+    const plan = async (now: number, mood: Mood, from: number, activity: Activity, chain?: number) => {
       const p = await read($, prefs)
-      if (activity === 'sit' || activity === 'nap') {
-        const dur = activity === 'nap' ? 15_000 + Math.random() * 30_000 : 2000 + Math.random() * 4000
-        await update($, motion, () => ({ from, to: from, t0: now, dur, activity }))
+      const still = stillFor(activity)
+      if (still !== null) {
+        // Fishing faces whichever side has room for the bowl or river.
+        const hit = activity === 'fish' ? Math.random() < 0.5 : undefined
+        await update($, motion, () => ({ from, to: from, t0: now, dur: still, activity, hit }))
+        if (activity === 'fish') await update($, cat, c => ({ ...c, dir: from < 0.5 ? 1 : -1 }))
         return
       }
       const base = mood === 'working' ? RUN_PACE[p.speed] : mood === 'tired' ? TIRED_PACE : PACE[p.speed]
-      const boost = activity === 'mouse' ? 3 : activity === 'yarn' ? 1.8 : activity === 'hop' ? 1.4 : activity === 'butterfly' ? 0.8 : 1
+      const boost =
+        activity === 'laser' ? 4.5 : activity === 'mouse' ? 3 : activity === 'yarn' ? 1.8 : activity === 'hop' ? 1.4
+        : activity === 'butterfly' ? 0.8 : activity === 'bird' ? 0.45 : 1
       const pace = mood === 'working' ? base : base * boost
       let to = Math.random()
-      if (Math.abs(to - from) < 0.2) to = from < 0.5 ? from + 0.3 + Math.random() * 0.4 : from - 0.3 - Math.random() * 0.4
-      to = clamp01(to)
+      if (activity === 'laser') {
+        // Short, frantic zips this way and that.
+        const sign = Math.random() < 0.5 ? 1 : -1
+        to = from + sign * (0.15 + Math.random() * 0.3)
+        if (to < 0.05 || to > 0.95) to = from - sign * (0.15 + Math.random() * 0.3)
+      } else if (activity === 'bird') {
+        // Creep a little way toward a bird that has landed nearby.
+        to = from < 0.5 ? from + 0.12 + Math.random() * 0.13 : from - 0.12 - Math.random() * 0.13
+      } else if (Math.abs(to - from) < 0.2) {
+        to = from < 0.5 ? from + 0.3 + Math.random() * 0.4 : from - 0.3 - Math.random() * 0.4
+      }
+      // Keep toys and critters ahead of the cat on screen.
+      to = WITH_COMPANION.has(activity) ? Math.max(0.12, Math.min(0.95, to)) : clamp01(to)
       const dur = Math.max(800, (Math.abs(to - from) / pace) * 1000)
-      await update($, motion, () => ({ from, to, t0: now, dur, activity }))
+      await update($, motion, () => ({ from, to, t0: now, dur, activity, chain }))
       await update($, cat, c => ({ ...c, dir: to > from ? 1 : -1 }))
+    }
+
+    const say = async (now: number, text: string) => {
+      sayUntil = now + 2500
+      await update($, cat, x => ({ ...x, say: text, sayAt: now }))
     }
 
     // Once a second: expire lines and moods, nap, and pick the next leg.
@@ -574,33 +850,74 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const c = await read($, cat)
       const m = await read($, motion)
-      const isLow = ((await read($, limits)).fiveHour ?? 0) >= 80
+      const fiveHour = (await read($, limits)).fiveHour ?? 0
+      const isLow = fiveHour >= 80
+      const isOut = fiveHour >= 100
       const here = posAt(m, now)
       let mood = c.mood
 
       if (c.say && now > sayUntil) await update($, cat, x => ({ ...x, say: null }))
+      const due = cues.filter(q => q.at <= now)
+      cues = cues.filter(q => q.at > now)
+      for (const q of due) await say(now, q.text)
       if (now > moodUntil && (mood === 'done' || mood === 'oops' || mood === 'pet')) mood = 'sit'
-      if (mood !== 'working' && mood !== 'sleep' && now - lastActivity > NAP_AFTER_MS) {
-        await update($, cat, x => ({ ...x, mood: 'sleep', say: null }))
-        await update($, motion, () => ({ from: here, to: here, t0: now, dur: 0 }))
+
+      // Bedtime: after a long quiet spell, or when the 5-hour limit runs
+      // out, the cat walks back to its perch (which slides in) and sleeps.
+      const isBedtime = now - lastActivity > NAP_AFTER_MS || (isOut && now > moodUntil)
+      if (mood !== 'working' && mood !== 'sleep' && isBedtime) {
+        cues = []
+        const pace = PACE[(await read($, prefs)).speed]
+        const dur = Math.max(SLIDE_MS + 200, (here / pace) * 1000)
+        sayUntil = now + 3000
+        await update($, cat, x => ({ ...x, mood: 'sleep', dir: -1, say: isOut ? 'out of juice… nap time' : 'bedtime…', sayAt: now }))
+        await update($, motion, () => ({ from: here, to: 0, t0: now, dur, activity: 'bed' as Activity }))
         return
       }
-      if (mood === 'sleep') return
+      if (mood === 'sleep') {
+        // Arrived: hop up and curl up on the perch.
+        if (m.activity === 'bed' && now >= m.t0 + m.dur) {
+          await update($, motion, () => ({ from: 0, to: 0, t0: now, dur: 0, activity: 'perch' as Activity }))
+        }
+        return
+      }
 
       if (now >= m.t0 + m.dur) {
         let activity: Activity = 'walk'
+        let chain: number | undefined
         if (mood !== 'working') {
           mood = isLow ? 'tired' : 'idle'
-          activity = pick(isLow ? TIRED_ACTIVITIES : IDLE_ACTIVITIES)
+          // Some activities lead into the next: a chased mouse may get
+          // caught, a stalked bird gets pounced on, the laser zips again.
+          let line: string | null = null
+          if (m.activity === 'mouse' && Math.random() < 0.6) activity = 'caught'
+          else if (m.activity === 'bird') activity = 'flyaway'
+          else if (m.activity === 'laser' && (m.chain ?? 0) > 0) {
+            activity = 'laser'
+            chain = (m.chain ?? 1) - 1
+          } else if (m.activity === 'laser') {
+            activity = 'sit'
+            line = "where'd it go?"
+          } else if (m.activity === 'fish') {
+            activity = 'sit'
+            line = m.hit ? 'got one! ♥' : 'next time…'
+          } else {
+            activity = pick(isLow ? TIRED_ACTIVITIES : IDLE_ACTIVITIES)
+            if (activity === 'laser') chain = 2 + Math.floor(Math.random() * 3)
+          }
           if (activity === 'sit') mood = 'sit'
           // Now and then, say something about it.
           const lines = LINES[activity]
-          if (lines && !c.say && Math.random() < 0.5) {
-            sayUntil = now + 2500
-            await update($, cat, x => ({ ...x, say: lines[Math.floor(Math.random() * lines.length)], sayAt: now }))
+          const isFollowUp = activity === 'caught' || activity === 'flyaway'
+          const isRepeat = activity === 'laser' && m.activity === 'laser'
+          if (!line && lines && !isRepeat && (isFollowUp || (!c.say && Math.random() < 0.5))) {
+            line = lines[Math.floor(Math.random() * lines.length)]
           }
+          if (line) await say(now, line)
+          if (activity === 'caught') cues.push({ at: now + 2100, text: 'hey! come back' })
+          if (activity === 'flyaway') cues.push({ at: now + 1600, text: 'nooo come back' })
         }
-        await plan(now, mood, here, activity)
+        await plan(now, mood, here, activity, chain)
       }
       if (mood !== c.mood) await update($, cat, x => ({ ...x, mood }))
     }
@@ -619,6 +936,8 @@ export const register: Register = on => {
     wake = async (mood: Mood, say: string | null, holdMs: number) => {
       const now = await $.clock.now()
       lastActivity = now
+      cues = []
+      const wasAsleep = (await read($, cat)).mood === 'sleep'
       if (say) sayUntil = now + Math.max(holdMs, 3000)
       moodUntil = now + holdMs
       const m = await read($, motion)
@@ -628,7 +947,7 @@ export const register: Register = on => {
       } else {
         await update($, motion, () => ({ from: here, to: here, t0: now, dur: holdMs, activity: 'sit' as Activity }))
       }
-      await update($, cat, c => ({ ...c, mood, say: say ?? c.say, sayAt: say ? now : c.sayAt }))
+      await update($, cat, c => ({ ...c, mood, say: say ?? c.say, sayAt: say ? now : c.sayAt, wokeAt: wasAsleep ? now : c.wokeAt }))
     }
 
     const saved = (await $.store.get('prefs')) as Partial<Prefs> | undefined

@@ -11,8 +11,13 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
 - **Announces when a turn finishes** (`‹done! 42s›`), plus a toast for turns longer than 20 seconds.
 - **Reacts to failures** with a `>.<` face when a tool call errors.
 - **Tracks your limits:** shows your 5-hour, 7-day and context usage in green, yellow or red. It gets sleepy at 80% of the 5-hour limit and sends a toast at 75% and 90%.
-- **Plays while you're idle:** chases a ball of yarn, hunts a mouse, follows a butterfly, hops around, and takes little cat naps.
-- **Naps** properly after 5 minutes of inactivity and wakes up on your next prompt.
+- **Plays while you're idle**, picking something new every few seconds:
+  - chases a ball of yarn, follows a butterfly, hops around, and takes little cat naps
+  - hunts a mouse, and sometimes pins it under a paw (before it wriggles free and runs off)
+  - stalks a bird, pounces ("nom?!"), and watches it fly away
+  - goes fishing: a fishbowl, a fish tank or a river, depending on the scene, and sometimes catches one
+  - chases a laser pointer dot back and forth until it vanishes ("where'd it go?")
+- **Goes to bed on its perch** after 5 minutes of inactivity, or when your 5-hour limit runs out. The perch slides in from the left (a cat bed, a tree stump, a cloud or a cat tree, depending on the scene), the cat walks over, hops up and curls up. On your next prompt it wakes and the perch slides away.
 - **Speech bubbles** that type themselves out, with animated dots, hearts and sparkles.
 - **Little animations** in between: tail wags, ear twitches, a shake when something fails, and drifting z's while it naps.
 - **Pet** button (it purrs) and **Hide** button.
@@ -22,7 +27,7 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
     ![The six coats](docs/coats.svg)
 
   - **Speed:** Chill, Normal or Zoomies
-  - **Scene:** Clear (follows your light/dark theme), Grass, Night or Cozy
+  - **Scene:** Clear (follows your light/dark theme), Grass, Night or Cozy. The scene also picks the perch and the fishing spot.
   - **Popups:** on or off
   - **Usage:** show or hide the limit numbers
 - **`/cat`** toggles it and prints your current limits and when the 5-hour window resets.
@@ -77,7 +82,7 @@ claude plugin validate ~/.claude/mods/claude-cat
 claude plugin test ~/.claude/mods/claude-cat
 ```
 
-The test draws the band on the desktop and terminal surfaces and presses the buttons, so a drawing the engine would refuse fails there instead of silently disappearing.
+The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity and perch in every scene, so a drawing the engine would refuse fails there instead of silently disappearing.
 
 ## Heads-up
 
