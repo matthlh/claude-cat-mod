@@ -30,7 +30,7 @@ export type Motion = {
 }
 
 export type Activity =
-  | 'walk' | 'sit' | 'nap' | 'hop' | 'yarn' | 'mouse' | 'butterfly'
+  | 'walk' | 'sit' | 'groom' | 'nap' | 'hop' | 'yarn' | 'mouse' | 'butterfly'
   | 'caught' | 'bird' | 'flyaway' | 'fish' | 'laser'
   // bedtime: walking to the perch, then asleep on it
   | 'bed' | 'perch'

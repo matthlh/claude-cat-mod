@@ -51,11 +51,12 @@ const RUN_PACE: Record<Speed, number> = { chill: 0.12, normal: 0.2, zoomies: 0.3
 const TIRED_PACE = 0.025
 
 // How often each idle activity comes up (relative weights).
+// Mostly calm (strolling, sitting, grooming, napping), with play now and then.
 const IDLE_ACTIVITIES: [Activity, number][] = [
-  ['walk', 22], ['sit', 13], ['nap', 12], ['hop', 8], ['yarn', 10], ['mouse', 10], ['butterfly', 9],
-  ['fish', 9], ['bird', 8], ['laser', 7],
+  ['walk', 18], ['sit', 22], ['groom', 16], ['nap', 14],
+  ['hop', 4], ['yarn', 5], ['mouse', 5], ['butterfly', 5], ['fish', 5], ['bird', 4], ['laser', 3],
 ]
-const TIRED_ACTIVITIES: [Activity, number][] = [['walk', 25], ['sit', 30], ['nap', 45]]
+const TIRED_ACTIVITIES: [Activity, number][] = [['walk', 20], ['sit', 25], ['groom', 10], ['nap', 45]]
 
 function pick(options: [Activity, number][]): Activity {
   let roll = Math.random() * options.reduce((sum, [, w]) => sum + w, 0)
@@ -71,6 +72,7 @@ const LINES: Partial<Record<Activity, string[]>> = {
   mouse: ['a mouse!', 'get back here', 'hunting…'],
   butterfly: ['ooh', 'pretty…', 'hi butterfly'],
   hop: ['wheee', 'boing boing'],
+  groom: ['*lick lick*', 'grooming…', 'must look good'],
   fish: ['fishing…', 'fishy fishy', 'shh, fish'],
   bird: ['shhh…', 'birb.', 'stalking…'],
   laser: ['THE DOT', 'red dot!!', 'gotta get it'],
@@ -80,7 +82,8 @@ const LINES: Partial<Record<Activity, string[]>> = {
 
 // Activities that happen on the spot, and how long they last (ms).
 function stillFor(a: Activity): number | null {
-  if (a === 'sit') return 2000 + Math.random() * 4000
+  if (a === 'sit') return 3000 + Math.random() * 5000
+  if (a === 'groom') return 4000 + Math.random() * 3000
   if (a === 'nap') return 15_000 + Math.random() * 30_000
   if (a === 'fish') return 7000 + Math.random() * 4000
   if (a === 'caught' || a === 'flyaway') return 3000
@@ -126,6 +129,9 @@ const WALK_A = [...HEAD, '.ooooooo...d', '..owwwooo.d.', '..oooooooo..', '..oo..
 const WALK_B = [...HEAD, '.ooooooo...d', '..owwwooo.d.', '..oooooooo..', '...oo.oo....']
 const SIT = [...HEAD, '.ooooooo....', '.owwwooo.d..', '.oowwooood..', '..oo..oo....']
 const SIT_WAG = [...HEAD, '.ooooooo..d.', '.owwwooo.d..', '.oowwooood..', '..oo..oo....']
+// Grooming: eyes shut, a paw up at the mouth, the tongue flicking out.
+const GROOM_A = closeEyes(SIT).map((r, y) => (y === 5 ? 'wwoonooor...' : y === 6 ? 'wooooooo....' : r))
+const GROOM_B = GROOM_A.map((r, y) => (y === 5 ? 'wnoonooor...' : r))
 // One front paw reaching out (for fishing and pinning a mouse).
 const SIT_PAW = [...HEAD, '.ooooooo....', 'oowwwooo.d..', '.oowwooood..', '......oo....']
 const LOAF = [
@@ -508,6 +514,8 @@ export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Sce
   } else if (pose === 'walk') {
     const legs = c.mood === 'working' || m.activity === 'mouse' || m.activity === 'laser' ? 0.2 : m.activity === 'bird' ? 0.6 : 0.32
     body = frames(rects(flip(eyes(WALK_A)), pal), rects(flip(eyes(WALK_B)), pal), legs, remaining)
+  } else if (busy && m.activity === 'groom') {
+    body = frames(rects(flip(GROOM_A), pal), rects(flip(GROOM_B), pal), 0.5)
   } else if (busy && m.activity === 'fish') {
     body = frames(rects(flip(eyes(SIT)), pal), rects(flip(eyes(SIT_PAW)), pal), 1)
   } else if (busy && m.activity === 'caught') {
@@ -516,7 +524,7 @@ export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Sce
     body = frames(rects(flip(eyes(SIT)), pal), rects(flip(eyes(SIT_WAG)), pal), 1.2)
   }
   // Blinks: closed-eye pixels laid over the open eyes for a moment.
-  if (pose !== 'loaf' && !isHappy(c.mood)) {
+  if (pose !== 'loaf' && !isHappy(c.mood) && !(busy && m.activity === 'groom')) {
     const open = flip(pose === 'walk' ? WALK_A : SIT)
     const shut = flip(closeEyes(pose === 'walk' ? WALK_A : SIT))
     body += `<g opacity="0">${rects(shut, pal, open)}<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.95;0.98" dur="4s" calcMode="discrete" repeatCount="indefinite"/></g>`
@@ -644,6 +652,7 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
   if (pose === 'loaf') rows = LOAF.map(r => r.replace(/[HK]/g, 'd'))
   else if (pose === 'walk') rows = Math.floor(now / (c.mood === 'working' || m.activity === 'mouse' || m.activity === 'laser' ? 100 : m.activity === 'bird' ? 300 : 160)) % 2 ? WALK_B : WALK_A
   else if (busy && m.activity === 'caught') rows = SIT_PAW
+  else if (busy && m.activity === 'groom') rows = Math.floor(now / 250) % 2 ? GROOM_B : GROOM_A
   else if (busy && m.activity === 'fish') rows = Math.floor(now / 500) % 2 ? SIT_PAW : SIT
   else rows = Math.floor(now / 600) % 2 ? SIT_WAG : SIT
   if (pose !== 'loaf' && (isHappy(c.mood) || now % 4000 > 3850)) rows = closeEyes(rows)
@@ -795,6 +804,7 @@ export const register: Register = on => {
   let site: { requestId: string; cols: number } | null = null
   // Assigned in session.start, where the timers live.
   let wake: (mood: Mood, say: string | null, holdMs: number) => Promise<void> = async () => {}
+  let goTo: (to: number) => Promise<void> = async () => {}
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -950,6 +960,28 @@ export const register: Register = on => {
       await update($, cat, c => ({ ...c, mood, say: say ?? c.say, sayAt: say ? now : c.sayAt, wokeAt: wasAsleep ? now : c.wokeAt }))
     }
 
+    // A click on the floor: the cat trots over to see what it was.
+    goTo = async (to: number) => {
+      const now = await $.clock.now()
+      lastActivity = now
+      cues = []
+      const c = await read($, cat)
+      const m = await read($, motion)
+      const here = posAt(m, now)
+      to = clamp01(to)
+      const dur = Math.max(400, (Math.abs(to - here) / RUN_PACE[(await read($, prefs)).speed]) * 1000)
+      sayUntil = now + 1500
+      await update($, motion, () => ({ from: here, to, t0: now, dur, activity: 'walk' as Activity }))
+      await update($, cat, x => ({
+        ...x,
+        mood: 'idle',
+        dir: to > here ? 1 : to < here ? -1 : x.dir,
+        say: '!',
+        sayAt: now,
+        wokeAt: c.mood === 'sleep' ? now : x.wokeAt,
+      }))
+    }
+
     const saved = (await $.store.get('prefs')) as Partial<Prefs> | undefined
     if (saved) await update($, prefs, () => ({ ...DEFAULT_PREFS, ...saved }))
 
@@ -1042,9 +1074,46 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'pet' }, async () => {
-    await wake('pet', 'purrr ♥', 3000)
-    return { element: 'pet' }
+  // Clicks on the lane, from the invisible layer over it (petter.tsx).
+  on('ui.message', async ($, e, next) => {
+    if (e.element !== 'petter') return next(e)
+    const d = e.data as { x?: number; columns?: number } | null
+    const columns = d?.columns ?? 0
+    if (!d || typeof d.x !== 'number' || columns <= 0) return {}
+    const now = await $.clock.now()
+    const c = await read($, cat)
+    const m = await read($, motion)
+    const perch = PERCHES[(await read($, prefs)).scene ?? 'clear']
+    const cur = posAt(m, now)
+
+    // Where the cat is, in columns of the lane, and how close counts.
+    let center: number
+    let reach: number
+    let toPos: (x: number) => number
+    if (e.surface === 'terminal') {
+      const span = Math.max(1, columns - SPRITE_W - 1)
+      const left = isOnPerch(c, m) ? 1 + Math.floor((perch.rows[0].length - SPRITE_W) / 2) : Math.round(cur * span)
+      center = left + SPRITE_W / 2
+      reach = SPRITE_W / 2 + 1
+      toPos = x => (x - SPRITE_W / 2) / span
+    } else {
+      const perCol = DESKTOP_PX_PER_COLUMN
+      const width = columns * perCol
+      const left = isOnPerch(c, m)
+        ? PERCH_X + (perch.rows[0].length * PX - CAT_W) / 2
+        : (cur * MAX_X * width) / 100
+      center = (left + CAT_W / 2) / perCol
+      reach = (CAT_W / 2 + 8) / perCol
+      toPos = x => (x * perCol - CAT_W / 2) / ((MAX_X * width) / 100)
+    }
+
+    if (Math.abs(d.x - center) <= reach) {
+      const lines = c.mood === 'sleep' ? ['mrrp?', '*yawn*'] : ['purrr ♥', 'mrrp!', '♥ ♥ ♥', 'more pets pls']
+      await wake('pet', lines[Math.floor(Math.random() * lines.length)], 3000)
+    } else if (c.mood !== 'working') {
+      await goTo(toPos(d.x))
+    }
+    return {}
   })
 
   on('ui.press', { plugin: 'claude-cat', element: 'hide' }, async $ => {
@@ -1086,7 +1155,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
 
-    const { Box, Text, Button, Raster, Svg } = $.ui.resolve(e) as any
+    const { Box, Text, Button, Raster, Svg, Client } = $.ui.resolve(e) as any
     const now = await $.clock.now()
     const c = await read($, cat)
     const m = await read($, motion)
@@ -1122,8 +1191,13 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Box flexDirection="row" width="100%">
+        <Box key="lane-box" flexDirection="row" width="100%" position="relative">
           {lane}
+          {Client ? (
+            <Box position="absolute" top={0} left={0} right={0} bottom={0}>
+              <Client key="petter" module="./petter.tsx" width="100%" height="100%" />
+            </Box>
+          ) : null}
         </Box>
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2}>
           {isSetting ? (
@@ -1144,7 +1218,6 @@ export const register: Register = on => {
             <Text> </Text>
           )}
           <Box flexDirection="row" columnGap={1} flexShrink={0}>
-            <Button key="pet" label="Pet" onPress={ignorePress} />
             <Button key="settings" label={isSetting ? 'Done' : '⚙'} onPress={ignorePress} />
             <Button key="hide" label="Hide" onPress={ignorePress} />
           </Box>

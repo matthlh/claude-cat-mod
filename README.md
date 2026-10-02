@@ -11,7 +11,7 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
 - **Announces when a turn finishes** (`‹done! 42s›`), plus a toast for turns longer than 20 seconds.
 - **Reacts to failures** with a `>.<` face when a tool call errors.
 - **Tracks your limits:** shows your 5-hour, 7-day and context usage in green, yellow or red. It gets sleepy at 80% of the 5-hour limit and sends a toast at 75% and 90%.
-- **Plays while you're idle**, picking something new every few seconds:
+- **Keeps itself busy while you're idle**, mostly calmly (strolling, sitting, grooming itself, napping), with play now and then:
   - chases a ball of yarn, follows a butterfly, hops around, and takes little cat naps
   - hunts a mouse, and sometimes pins it under a paw (before it wriggles free and runs off)
   - stalks a bird, pounces ("nom?!"), and watches it fly away
@@ -26,7 +26,8 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
   ![The four perches: a cat bed, a tree stump, a cloud and a cat tree](docs/bedtime.svg)
 - **Speech bubbles** that type themselves out, with animated dots, hearts and sparkles.
 - **Little animations** in between: tail wags, ear twitches, a shake when something fails, and drifting z's while it naps.
-- **Pet** button (it purrs) and **Hide** button.
+- **Click the cat to pet it** (it purrs, with floating hearts, and wakes up if it was asleep). Click anywhere else on the lane and it trots over to see what's there.
+- **Hide** button.
 - **⚙ Settings**, saved across sessions:
   - **Coat:** Orange, Tuxedo, Black, Grey, Cream or Sakura
 
