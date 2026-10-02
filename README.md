@@ -11,11 +11,23 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
 - **Announces when a turn finishes** (`‹done! 42s›`), plus a toast for turns longer than 20 seconds.
 - **Reacts to failures** with a `>.<` face when a tool call errors.
 - **Tracks your limits:** shows your 5-hour, 7-day and context usage in green, yellow or red. It gets sleepy at 80% of the 5-hour limit and sends a toast at 75% and 90%.
-- **Naps** after 5 minutes of inactivity and wakes up on your next prompt.
+- **Plays while you're idle:** chases a ball of yarn, hunts a mouse, follows a butterfly, hops around, and takes little cat naps.
+- **Naps** properly after 5 minutes of inactivity and wakes up on your next prompt.
+- **Speech bubbles** that type themselves out, with animated dots, hearts and sparkles.
+- **Little animations** in between: tail wags, ear twitches, a shake when something fails, and drifting z's while it naps.
 - **Pet** button (it purrs) and **Hide** button.
+- **⚙ Settings**, saved across sessions:
+  - **Coat:** Orange, Tuxedo, Black, Grey, Cream or Sakura
+
+    ![The six coats](docs/coats.svg)
+
+  - **Speed:** Chill, Normal or Zoomies
+  - **Scene:** Clear (follows your light/dark theme), Grass, Night or Cozy
+  - **Popups:** on or off
+  - **Usage:** show or hide the limit numbers
 - **`/cat`** toggles it and prints your current limits and when the 5-hour window resets.
 
-In the Claude desktop app it's drawn as a crisp SVG. In the terminal it's drawn with colored half-block characters.
+In the Claude desktop app the whole lane is one SVG that animates itself (smooth gliding, leg and tail frames, blinks, floating hearts and z's), so the mod only redraws when the cat changes what it's doing. In the terminal the lane is a cell grid of colored half blocks, repainted in place 10 times a second.
 
 ## Install
 
@@ -62,7 +74,10 @@ Check your changes with:
 
 ```bash
 claude plugin validate ~/.claude/mods/claude-cat
+claude plugin test ~/.claude/mods/claude-cat
 ```
+
+The test draws the band on the desktop and terminal surfaces and presses the buttons, so a drawing the engine would refuse fails there instead of silently disappearing.
 
 ## Heads-up
 
