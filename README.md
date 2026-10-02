@@ -17,7 +17,13 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
   - stalks a bird, pounces ("nom?!"), and watches it fly away
   - goes fishing: a fishbowl, a fish tank or a river, depending on the scene, and sometimes catches one
   - chases a laser pointer dot back and forth until it vanishes ("where'd it go?")
+
+  ![The cat chasing yarn, hunting a mouse, following a butterfly, working and done](docs/play.svg)
+
+  ![Each scene: fishing at a fishbowl, stalking a bird, chasing a laser dot, fishing at a fish tank](docs/scenes.svg)
 - **Goes to bed on its perch** after 5 minutes of inactivity, or when your 5-hour limit runs out. The perch slides in from the left (a cat bed, a tree stump, a cloud or a cat tree, depending on the scene), the cat walks over, hops up and curls up. On your next prompt it wakes and the perch slides away.
+
+  ![The four perches: a cat bed, a tree stump, a cloud and a cat tree](docs/bedtime.svg)
 - **Speech bubbles** that type themselves out, with animated dots, hearts and sparkles.
 - **Little animations** in between: tail wags, ear twitches, a shake when something fails, and drifting z's while it naps.
 - **Pet** button (it purrs) and **Hide** button.
@@ -48,17 +54,21 @@ git clone https://github.com/matthlh/claude-cat-mod ~/.claude/mods/claude-cat
 claude --plugin-dir ~/.claude/mods/claude-cat
 ```
 
-**For every session**, including the desktop app, add this to `~/.claude/settings.json`:
+**For every session**, in every project and in the desktop app, add this to `~/.claude/settings.json` (merge it into the `env` block if you already have one):
 
 ```json
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/claude-cat"
+    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/claude-cat",
+    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
   }
 }
 ```
 
-`CLAUDE_CODE_PLUGIN_DIRS` takes absolute paths. If you already load other plugin folders, separate them with `:`.
+- `CLAUDE_CODE_PLUGIN_DIRS` tells Claude Code where the mod is. It takes absolute paths; separate several folders with `:`.
+- `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` turns mods on. They're still rolling out, so without it a session may load the mod's files but not run it.
+
+Then start a new session. Sessions that were already open when you changed the settings won't pick it up until they restart (in the desktop app, start a new chat or quit and reopen the app).
 
 ## Customize
 
