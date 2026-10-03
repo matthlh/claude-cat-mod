@@ -9,7 +9,11 @@ export type Cat = {
   sayAt?: number
   /** when it last woke from a proper sleep, so the perch can slide away */
   wokeAt?: number
+  /** what it's working with while Claude runs a tool */
+  prop?: ToolProp | null
 }
+
+export type ToolProp = 'read' | 'edit' | 'bash' | 'search'
 
 /**
  * One leg of the cat's walk: from one spot to another (0 = left end of the
@@ -34,6 +38,10 @@ export type Activity =
   | 'caught' | 'bird' | 'flyaway' | 'fish' | 'laser'
   // bedtime: walking to the perch, then asleep on it
   | 'bed' | 'perch'
+  // while Claude runs a tool: sitting with a book, laptop, terminal or magnifier
+  | 'busy'
+  // mischief: walk to a mug and knock it off its table; sit on the usage stats
+  | 'knock' | 'shove' | 'meter' | 'sitmeter'
 
 export type Limits = {
   fiveHour: number | null
@@ -46,12 +54,28 @@ export type Coat = 'orange' | 'tuxedo' | 'black' | 'grey' | 'cream' | 'sakura'
 export type Speed = 'chill' | 'normal' | 'zoomies'
 export type Scene = 'clear' | 'grass' | 'night' | 'cozy'
 
+export type Hat = 'none' | 'party' | 'beanie' | 'wizard' | 'crown'
+export type Marking = 'none' | 'blaze' | 'socks' | 'tip' | 'spot'
+
+/** Rolled once per install and kept: what makes this cat yours. */
+export type Identity = {
+  marking: Marking
+  shiny: boolean
+}
+
+/** Lifetime counts that unlock hats. */
+export type Stats = {
+  turns: number
+  tools: number
+}
+
 export type Prefs = {
   coat: Coat
   speed: Speed
   scene: Scene
   popups: boolean
   showUsage: boolean
+  hat: Hat
 }
 
 declare module 'claude-code' {
@@ -63,6 +87,8 @@ declare module 'claude-code' {
       isHidden: boolean
       prefs: Prefs
       isSettingsOpen: boolean
+      identity: Identity
+      stats: Stats
     }
   }
 }

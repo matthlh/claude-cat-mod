@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Activity, Cat, Coat, Limits, Mood, Motion, Prefs, Scene, Speed } from '../types'
+import type { Activity, Cat, Coat, Hat, Identity, Limits, Marking, Mood, Motion, Prefs, Scene, Speed, Stats, ToolProp } from '../types'
 
 // ── State ────────────────────────────────────────────────────────────────
 // The hooks only write state when something changes (a mood, a line, a new
@@ -27,15 +27,18 @@ const limits = atom({ plugin: 'claude-cat', key: 'limits' } as const, {
   fiveHourResets: null,
 } as Limits)
 const isHidden = atom({ plugin: 'claude-cat', key: 'isHidden' } as const, false)
-const DEFAULT_PREFS: Prefs = { coat: 'orange', speed: 'normal', scene: 'clear', popups: true, showUsage: true }
+const DEFAULT_PREFS: Prefs = { coat: 'orange', speed: 'normal', scene: 'clear', popups: true, showUsage: true, hat: 'none' }
 const prefs = atom({ plugin: 'claude-cat', key: 'prefs' } as const, {
   coat: 'orange',
   speed: 'normal',
   scene: 'clear',
   popups: true,
   showUsage: true,
+  hat: 'none',
 } as Prefs)
 const isSettingsOpen = atom({ plugin: 'claude-cat', key: 'isSettingsOpen' } as const, false)
+const identity = atom({ plugin: 'claude-cat', key: 'identity' } as const, { marking: 'none', shiny: false } as Identity)
+const stats = atom({ plugin: 'claude-cat', key: 'stats' } as const, { turns: 0, tools: 0 } as Stats)
 
 const COATS: Coat[] = ['orange', 'tuxedo', 'black', 'grey', 'cream', 'sakura']
 const SPEEDS: Speed[] = ['chill', 'normal', 'zoomies']
@@ -55,7 +58,10 @@ const TIRED_PACE = 0.025
 const IDLE_ACTIVITIES: [Activity, number][] = [
   ['walk', 18], ['sit', 22], ['groom', 16], ['nap', 14],
   ['hop', 4], ['yarn', 5], ['mouse', 5], ['butterfly', 5], ['fish', 5], ['bird', 4], ['laser', 3],
+  ['knock', 4], ['meter', 3],
 ]
+// Late at night it mostly naps.
+const NIGHT_ACTIVITIES: [Activity, number][] = [['walk', 10], ['sit', 20], ['groom', 15], ['nap', 50], ['meter', 5]]
 const TIRED_ACTIVITIES: [Activity, number][] = [['walk', 20], ['sit', 25], ['groom', 10], ['nap', 45]]
 
 function pick(options: [Activity, number][]): Activity {
@@ -78,6 +84,10 @@ const LINES: Partial<Record<Activity, string[]>> = {
   laser: ['THE DOT', 'red dot!!', 'gotta get it'],
   caught: ['got it!', 'gotcha!'],
   flyaway: ['nom?!', 'nom nom'],
+  knock: ['ooh, a mug', "what's this…"],
+  shove: ['*tap*', '*tap tap*'],
+  meter: ['brb', 'one sec'],
+  sitmeter: ['this spot is warm', 'mine now', 'comfy'],
 }
 
 // Activities that happen on the spot, and how long they last (ms).
@@ -87,11 +97,35 @@ function stillFor(a: Activity): number | null {
   if (a === 'nap') return 15_000 + Math.random() * 30_000
   if (a === 'fish') return 7000 + Math.random() * 4000
   if (a === 'caught' || a === 'flyaway') return 3000
+  if (a === 'shove') return 3600
+  if (a === 'sitmeter') return 8000 + Math.random() * 6000
   return null
 }
 
 // Activities with a toy or critter ahead of the cat.
-const WITH_COMPANION = new Set<Activity | undefined>(['yarn', 'mouse', 'butterfly', 'bird', 'laser', 'fish', 'caught', 'flyaway'])
+const WITH_COMPANION = new Set<Activity | undefined>(['yarn', 'mouse', 'butterfly', 'bird', 'laser', 'fish', 'caught', 'flyaway', 'busy', 'knock', 'shove'])
+
+// What the cat works with for each kind of tool Claude runs.
+function toolProp(name: string): ToolProp | null {
+  if (/^(Read|NotebookRead)$/.test(name)) return 'read'
+  if (/Edit|Write/.test(name)) return 'edit'
+  if (/^(Bash|BashOutput|Shell|PowerShell)$/.test(name)) return 'bash'
+  if (/Grep|Glob|Search|Web|Fetch|^LS$/i.test(name)) return 'search'
+  return null
+}
+
+// Hats, and what unlocks them.
+const HATS: { hat: Hat; label: string; need: (s: Stats) => boolean; hint: string }[] = [
+  { hat: 'party', label: 'Party hat', need: s => s.turns >= 10, hint: '10 finished tasks' },
+  { hat: 'beanie', label: 'Beanie', need: s => s.tools >= 100, hint: '100 tool calls' },
+  { hat: 'crown', label: 'Crown', need: s => s.turns >= 150, hint: '150 finished tasks' },
+  { hat: 'wizard', label: 'Wizard hat', need: s => s.tools >= 500, hint: '500 tool calls' },
+]
+function unlockedHats(s: Stats): Hat[] {
+  return HATS.filter(h => h.need(s)).map(h => h.hat)
+}
+
+const MARKINGS: Marking[] = ['none', 'blaze', 'socks', 'tip', 'spot']
 
 function cycle<T>(list: T[], v: T): T {
   return list[(list.indexOf(v) + 1) % list.length]
@@ -132,6 +166,55 @@ const SIT_WAG = [...HEAD, '.ooooooo..d.', '.owwwooo.d..', '.oowwooood..', '..oo.
 // Grooming: eyes shut, a paw up at the mouth, the tongue flicking out.
 const GROOM_A = closeEyes(SIT).map((r, y) => (y === 5 ? 'wwoonooor...' : y === 6 ? 'wooooooo....' : r))
 const GROOM_B = GROOM_A.map((r, y) => (y === 5 ? 'wnoonooor...' : r))
+// Markings and hats, drawn into every sprite so each pose wears them.
+// Hats sit between the ears, in rows padded on above the sprite.
+const HAT_PAD = 4
+const HAT_ROWS: Record<Exclude<Hat, 'none'>, string[]> = {
+  party: ['.Z.', '.P.', 'PQP', 'QPQ'],
+  beanie: ['..Z..', '.UUU.', 'UVUVU'],
+  wizard: ['..X..', '.XYX.', '.XXX.', 'XXXXX'],
+  crown: ['Y.Y.Y', 'YYYYY'],
+}
+const HAT_PAL: Palette = { P: 0xff6fae, Q: 0xffc2dc, Z: 0xffd54a, U: 0x4a7fd6, V: 0x8fb3ee, X: 0x7a4fd6, Y: 0xf5c542 }
+
+function setAt(row: string, x: number, ch: string): string {
+  return x < 0 || x >= row.length ? row : row.slice(0, x) + ch + row.slice(x + 1)
+}
+
+function mark(rows: string[], m: Marking): string[] {
+  const out = [...rows]
+  if (m === 'blaze') {
+    const y = out.findIndex(r => r.includes('ooooooooo'))
+    if (y >= 0) out[y] = setAt(out[y], 4, 'w')
+  } else if (m === 'socks') {
+    const y = out.length - 1
+    out[y] = out[y].replace('oo', 'ww')
+  } else if (m === 'tip') {
+    const y = out.findIndex(r => r.lastIndexOf('d') >= 9)
+    if (y >= 0) out[y] = setAt(out[y], out[y].lastIndexOf('d'), 'w')
+  } else if (m === 'spot') {
+    const y = out.findIndex((r, i) => i > 0 && !r.includes('K') && r.includes('w'))
+    if (y >= 0 && out[y][6] === 'o') out[y] = setAt(out[y], 6, 'd')
+  }
+  return out
+}
+
+// A sprite with its marking and hat, padded HAT_PAD rows on top (draw it
+// HAT_PAD rows higher). Facing left, before any flip.
+function dress(rows: string[], m: Marking, hat: Hat): string[] {
+  const out = [...Array(HAT_PAD).fill('.'.repeat(SPRITE_W)), ...mark(rows, m)]
+  if (hat === 'none') return out
+  const h = HAT_ROWS[hat]
+  const ears = rows.findIndex(r => r.includes('o'))
+  const bottom = HAT_PAD + ears + 1
+  const x0 = 4 - Math.floor(h[0].length / 2)
+  h.forEach((line, i) => {
+    const y = bottom - (h.length - 1) + i
+    for (let x = 0; x < line.length; x++) if (line[x] !== '.') out[y] = setAt(out[y], x0 + x, line[x])
+  })
+  return out
+}
+
 // One front paw reaching out (for fishing and pinning a mouse).
 const SIT_PAW = [...HEAD, '.ooooooo....', 'oowwwooo.d..', '.oowwooood..', '......oo....']
 const LOAF = [
@@ -196,6 +279,29 @@ const BIRD_PECK = ['.....', '.bb..', 'pbbbb', '.bbq.']
 const BIRD_UP = ['.b.b.', 'pbbbb', '..bb.', '.....']
 const BIRD_DOWN = ['.....', 'pbbbb', 'bb.bb', '.....']
 const FISH = ['fffF', '.ffF']
+
+// Props: a book, a laptop, a terminal, a magnifying glass; a table and a mug.
+const TOOL_ROWS: Record<ToolProp, string[]> = {
+  read: ['.wwcww.', 'wwwcwww', 'wwwcwww', 'ccccccc'],
+  edit: ['kkkkk..', 'ksssk..', 'ksssk..', 'kkkkk..', 'ggggggg'],
+  bash: ['kkkkkk', 'kGkkkk', 'kkGkkk', 'kGkGGk', 'kkkkkk', '..gg..'],
+  search: ['.ggg..', 'gWWWg.', 'gWWWg.', '.ggg..', '....h.', '.....h'],
+}
+const TABLE = ['TTTTTTT', 't.....t', 't.....t', 't.....t']
+const MUG = ['MMM.', 'MMMm', 'MMM.']
+const PROP_COLORS: Palette = {
+  k: 0x2b2b33, s: 0x6fb3ff, g: 0xb0b6bf, G: 0x3fb950, w: 0xf5f0e6, c: 0xb5523b, W: 0xcfe8f3, h: 0x8a5a3c,
+  T: 0x9a6b47, t: 0x7a5234, M: 0xe8e4da, m: 0xc9c3b5,
+}
+// The food bowl shows how much context is left: full when fresh, empty near the limit.
+const BOWL_PAL: Palette = { F: 0xd39a5b, f: 0xa86a35, B: 0xd9534f, b: 0xa83a37 }
+function bowlRows(ctx: number): string[] {
+  const n = Math.round(12 * clamp01(1 - ctx / 100))
+  const low = Math.min(6, n)
+  const high = Math.max(0, n - 6)
+  const fill = (k: number, ch: string) => '.' + ch.repeat(k).padEnd(6, '.') + '.'
+  return [fill(high, 'F'), fill(low, 'f'), 'BBBBBBBB', '.bbbbbb.']
+}
 const TOYS: Palette = {
   b: 0x9c7a5b,
   p: 0xf2b544,
@@ -276,13 +382,33 @@ const SCENES: Scene[] = ['clear', 'grass', 'night', 'cozy']
 const SCENE_BG: Record<Scene, number> = { clear: 0x01000000, grass: 0x14301c, night: 0x10162a, cozy: 0x33261f }
 
 // Desktop: a backdrop drawn behind the cat, in percent so it fills any width.
-function sceneSvg(scene: Scene): string {
+// Time of day: a tint over the sky, by local hour.
+function skyAt(hour: number): { color: string; tint: number; isNight: boolean } {
+  if (hour >= 21 || hour < 5) return { color: '#1b2547', tint: 0.45, isNight: true }
+  if (hour < 7) return { color: '#f6b4a5', tint: 0.14, isNight: false }
+  if (hour >= 18) return { color: '#f39a5b', tint: 0.14, isNight: false }
+  return { color: '#9fd3ff', tint: 0, isNight: false }
+}
+
+function starsSvg(spots: number[][], opacity: number): string {
+  return spots
+    .map(([p, y], i) => `<circle cx="${p}%" cy="${y}" r="0.9" fill="#e8e6ff" opacity="${opacity}"><animate attributeName="opacity" values="${opacity};0.15;${opacity}" dur="${2 + (i % 3)}s" begin="${i * 0.37}s" repeatCount="indefinite"/></circle>`)
+    .join('')
+}
+
+export type Extras = { ctx?: number | null; identity?: Identity; hat?: Hat; hour?: number }
+
+function sceneSvg(scene: Scene, hour = 12): string {
   const H = LANE_H
+  const sky = skyAt(hour)
+  if (scene === 'clear') return sky.isNight ? starsSvg([[12, 6], [38, 10], [63, 5], [88, 9]], 0.5) : ''
   if (scene === 'grass') {
+    const tint = sky.tint ? `<rect x="0" y="0" width="100%" height="${H}" rx="6" fill="${sky.color}" opacity="${sky.tint}"/>` : ''
+    const stars = sky.isNight ? starsSvg([[8, 6], [27, 12], [46, 5], [70, 9], [91, 6]], 0.8) : ''
     const tufts = [6, 19, 33, 47, 61, 74, 88]
       .map(p => `<svg x="${p}%" y="${H - 11}" overflow="visible"><path d="M0 6 l2 -5 l1 5 l2 -6 l1 6" fill="none" stroke="#4f9a5a" stroke-width="1.2"/></svg>`)
       .join('')
-    return `<rect x="0" y="${H - 5}" width="100%" height="5" rx="2" fill="#2f6b3a"/>${tufts}`
+    return `${tint}${stars}<rect x="0" y="${H - 5}" width="100%" height="5" rx="2" fill="#2f6b3a"/>${tufts}`
   }
   if (scene === 'night') {
     const stars = [[4, 6], [13, 18], [22, 5], [37, 11], [51, 4], [63, 16], [71, 7], [83, 13], [95, 5]]
@@ -291,7 +417,10 @@ function sceneSvg(scene: Scene): string {
     return `<rect x="0" y="0" width="100%" height="${H}" rx="6" fill="#141a2e"/>${stars}<circle cx="92%" cy="9" r="5" fill="#f2e9c9"/><circle cx="91%" cy="8" r="5" fill="#141a2e" transform="translate(-3 -1)"/>`
   }
   if (scene === 'cozy') {
-    return `<rect x="0" y="0" width="100%" height="${H}" rx="6" fill="#3a2c24"/><rect x="0" y="${H - 4}" width="100%" height="4" fill="#5a4334"/><rect x="70%" y="${H - 7}" width="18%" height="3" rx="1.5" fill="#a2554a" opacity="0.8"/>`
+    // A window showing the sky outside, with the moon at night.
+    const moon = sky.isNight ? '<circle cx="18" cy="7" r="2.5" fill="#f2e9c9"/>' : ''
+    const window = `<svg x="28%" y="6" overflow="visible"><rect width="26" height="15" rx="2" fill="${sky.color}" stroke="#5a4334" stroke-width="2"/><line x1="13" y1="0" x2="13" y2="15" stroke="#5a4334" stroke-width="1.5"/>${moon}</svg>`
+    return `<rect x="0" y="0" width="100%" height="${H}" rx="6" fill="#3a2c24"/>${window}<rect x="0" y="${H - 4}" width="100%" height="4" fill="#5a4334"/><rect x="70%" y="${H - 7}" width="18%" height="3" rx="1.5" fill="#a2554a" opacity="0.8"/>`
   }
   return ''
 }
@@ -302,7 +431,7 @@ const PX = 3 // CSS pixels per sprite pixel
 const CAT_W = SPRITE_W * PX // 36
 const CAT_H = 30
 // Room above the cat so hops and bounces don't clip its head.
-const HEADROOM = 8
+const HEADROOM = 12
 const LANE_H = CAT_H + HEADROOM
 // The desktop reports its width in monospace columns; the SVG wants pixels.
 const DESKTOP_PX_PER_COLUMN = 8.4
@@ -384,6 +513,11 @@ function floaters(c: Cat, isNapping: boolean): string {
   return ''
 }
 
+// A shiny cat sparkles now and then.
+const SHINY = [[3, 2, 0], [31, 9, 1.3], [17, -6, 2.1]]
+  .map(([x, y, d]) => `<text x="${x}" y="${y}" font-size="7" fill="#f5c542" opacity="0">✦<animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.25;1" dur="3.2s" begin="${d}s" repeatCount="indefinite"/></text>`)
+  .join('')
+
 const BOB = '<animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0" dur="3s" repeatCount="indefinite"/>'
 
 // The perch, sliding in at bedtime and out on waking, in lane coordinates.
@@ -406,7 +540,7 @@ function perchSvg(c: Cat, m: Motion, now: number, scene: Scene): string {
 // placed ahead of the cat in the direction it faces. One-shot animations
 // start at the leg's start (a negative begin), so a redraw mid-leg picks
 // them up where they were.
-function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: number, now: number, scene: Scene): string {
+function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: number, now: number, scene: Scene, prop?: ToolProp | null): string {
   const ahead = (w: number) => (dir === 1 ? CAT_W + 3 : -w - 3)
   const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
   const until = walking ? remaining : undefined
@@ -429,6 +563,31 @@ function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: numbe
       <animateTransform attributeName="transform" type="translate" values="0 0;4 -3;1 2;-3 -1;0 0" dur="1.8s" repeatCount="indefinite"/>
       ${frames(rects(FLY_OPEN, TOYS), rects(FLY_SHUT, TOYS), 0.25)}
     </g></g>`
+  }
+  if (m.activity === 'busy' && prop) {
+    const rows = TOOL_ROWS[prop]
+    const w = rows[0].length * PX
+    const h = rows.length * PX
+    const rowsFacing = dir === 1 ? rows : faceRight(rows)
+    const wander = prop === 'search'
+      ? '<animateTransform attributeName="transform" type="translate" values="0 0;-4 -4;3 -2;0 0" dur="2.2s" repeatCount="indefinite"/>'
+      : ''
+    return `<g transform="translate(${ahead(w)} ${CAT_H - h})"><g>${wander}${rects(rowsFacing, PROP_COLORS)}</g></g>`
+  }
+  if (m.activity === 'shove') {
+    // Tap, tap… then the mug slides off the edge and smashes.
+    const tw = TABLE[0].length * PX
+    const x = ahead(tw)
+    const mugX = x + (dir === 1 ? 2 : 3) * PX
+    const mugY = CAT_H - TABLE.length * PX - MUG.length * PX
+    const fall = TABLE.length * PX
+    const shards = `<g opacity="0" transform="translate(${mugX + dir * 22} ${CAT_H - 3})"><animate attributeName="opacity" values="0;0;1" keyTimes="0;0.6;0.61" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>${rects(['M.m.M'], PROP_COLORS)}</g>`
+    return `${shards}<g transform="translate(${x} ${CAT_H - TABLE.length * PX})">${rects(TABLE, PROP_COLORS)}</g>
+      <g transform="translate(${mugX} ${mugY})"><g>
+        <animateTransform attributeName="transform" type="translate" values="0 0;0 0;${dir * 16} 0;${dir * 22} ${fall}" keyTimes="0;0.4;0.52;0.6" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+        <animate attributeName="opacity" values="1;1;0" keyTimes="0;0.6;0.61" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
+        ${rects(dir === 1 ? MUG : faceRight(MUG), PROP_COLORS)}
+      </g></g>`
   }
   if (m.activity === 'laser') {
     return `<g transform="translate(${ahead(6) + 3} ${CAT_H - 3})"><g>
@@ -486,9 +645,19 @@ function companionSvg(m: Motion, dir: 1 | -1, walking: boolean, remaining: numbe
   return ''
 }
 
-// A bird pecking at the spot the cat is creeping toward, in lane coordinates.
+// A bird pecking, or a mug on a table, at the spot the cat is walking to,
+// in lane coordinates.
 function stalkedBirdSvg(m: Motion, dir: 1 | -1, now: number, pct: (p: number) => string): string {
-  if (m.activity !== 'bird' || now >= m.t0 + m.dur) return ''
+  if (now >= m.t0 + m.dur) return ''
+  if (m.activity === 'knock') {
+    const tw = TABLE[0].length * PX
+    const x = dir === 1 ? CAT_W + 3 : -tw - 3
+    return `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${CAT_W}" height="${CAT_H}" overflow="visible"><g shape-rendering="crispEdges">
+      <g transform="translate(${x} ${CAT_H - TABLE.length * PX})">${rects(TABLE, PROP_COLORS)}</g>
+      <g transform="translate(${x + (dir === 1 ? 2 : 3) * PX} ${CAT_H - TABLE.length * PX - MUG.length * PX})">${rects(dir === 1 ? MUG : faceRight(MUG), PROP_COLORS)}</g>
+    </g></svg>`
+  }
+  if (m.activity !== 'bird') return ''
   const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
   const x = dir === 1 ? CAT_W + 3 : -5 * PX - 3
   return `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${CAT_W}" height="${CAT_H}" overflow="visible">
@@ -496,14 +665,21 @@ function stalkedBirdSvg(m: Motion, dir: 1 | -1, now: number, pct: (p: number) =>
   </svg>`
 }
 
-export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Scene): string {
+export function laneSvg(c: Cat, m: Motion, now: number, catPal: Palette, scene: Scene, x: Extras = {}): string {
+  const id = x.identity ?? { marking: 'none', shiny: false }
+  const hat = x.hat ?? 'none'
+  const pal = { ...catPal, ...HAT_PAL }
   const cur = posAt(m, now)
   const walking = isWalking(m, now)
   const busy = now < m.t0 + m.dur
   const remaining = walking ? m.t0 + m.dur - now : 0
   const dir = m.to > m.from && walking ? 1 : m.to < m.from && walking ? -1 : c.dir
   const pct = (p: number) => `${(clamp01(p) * MAX_X).toFixed(3)}%`
-  const flip = (rows: string[]) => (dir === 1 ? faceRight(rows) : rows)
+  // Every cat sprite wears its marking and hat, then faces the way it's going.
+  const flip = (rows: string[]) => {
+    const d = dress(rows, id.marking, hat)
+    return dir === 1 ? faceRight(d) : d
+  }
   const pose = posture(c, m, now)
   const eyes = (rows: string[]) => (isHappy(c.mood) ? closeEyes(rows) : rows)
   const at = (ms: number) => `${Math.round(m.t0 + ms - now)}ms`
@@ -518,6 +694,9 @@ export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Sce
     body = frames(rects(flip(GROOM_A), pal), rects(flip(GROOM_B), pal), 0.5)
   } else if (busy && m.activity === 'fish') {
     body = frames(rects(flip(eyes(SIT)), pal), rects(flip(eyes(SIT_PAW)), pal), 1)
+  } else if (busy && (m.activity === 'shove' || (m.activity === 'busy' && (c.prop === 'edit' || c.prop === 'bash')))) {
+    // Typing away, or tapping the mug.
+    body = frames(rects(flip(eyes(SIT)), pal), rects(flip(eyes(SIT_PAW)), pal), m.activity === 'shove' ? 0.45 : 0.25)
   } else if (busy && m.activity === 'caught') {
     body = rects(flip(eyes(SIT_PAW)), pal)
   } else {
@@ -564,16 +743,18 @@ export function laneSvg(c: Cat, m: Motion, now: number, pal: Palette, scene: Sce
   // so a Clear lane stays see-through instead of a white page.
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${LANE_H}" overflow="visible" style="background:transparent">
   <style>:root{color-scheme:light dark;background:transparent}</style>
-  ${sceneSvg(scene)}
+  ${sceneSvg(scene, x.hour ?? 12)}
+  ${typeof x.ctx === 'number' ? `<svg x="100%" y="${HEADROOM}" overflow="visible"><g shape-rendering="crispEdges" transform="translate(${-8 * PX - 8} ${CAT_H - 4 * PX})">${rects(bowlRows(x.ctx), BOWL_PAL)}</g></svg>` : ''}
   ${perchSvg(c, m, now, scene)}
   ${stalkedBirdSvg(m, dir, now, pct)}
   <svg x="${pct(cur)}" y="${HEADROOM}" width="${CAT_W}" height="${CAT_H}" overflow="visible">${glide}
     ${perchOpen}
     <g shape-rendering="crispEdges">
-      ${busy || !walking ? companionSvg(m, dir, walking, remaining, now, scene) : ''}
-      <g>${bounce}${body}</g>
+      ${busy || !walking ? companionSvg(m, dir, walking, remaining, now, scene, c.prop) : ''}
+      <g transform="translate(0 ${-HAT_PAD * PX})"><g>${bounce}${body}</g></g>
     </g>
     ${floatX ? '' : floaters(c, isNapping)}
+    ${id.shiny ? SHINY : ''}
     ${isNapping ? '' : bubbleSvg(c, bubbleLeft, tint)}
     </g></g></g>
     ${floatX ? `<g transform="translate(${floatX} 0)">${floaters(c, isNapping)}</g>` : ''}
@@ -614,7 +795,7 @@ function terminalLine(c: Cat, now: number): string | null {
   return line
 }
 
-export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: number, scene: Scene): string {
+export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: number, scene: Scene, x: Extras = {}): string {
   const ROWS = 5
   const PIX = ROWS * 2
   const bg = SCENE_BG[scene]
@@ -653,6 +834,9 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
   else if (pose === 'walk') rows = Math.floor(now / (c.mood === 'working' || m.activity === 'mouse' || m.activity === 'laser' ? 100 : m.activity === 'bird' ? 300 : 160)) % 2 ? WALK_B : WALK_A
   else if (busy && m.activity === 'caught') rows = SIT_PAW
   else if (busy && m.activity === 'groom') rows = Math.floor(now / 250) % 2 ? GROOM_B : GROOM_A
+  else if (busy && (m.activity === 'shove' || (m.activity === 'busy' && (c.prop === 'edit' || c.prop === 'bash')))) {
+    rows = Math.floor(now / 200) % 2 ? SIT_PAW : SIT
+  }
   else if (busy && m.activity === 'fish') rows = Math.floor(now / 500) % 2 ? SIT_PAW : SIT
   else rows = Math.floor(now / 600) % 2 ? SIT_WAG : SIT
   if (pose !== 'loaf' && (isHappy(c.mood) || now % 4000 > 3850)) rows = closeEyes(rows)
@@ -664,7 +848,11 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
     cx = 1 + Math.floor((pw - SPRITE_W) / 2)
     cy = -Math.min(4, ph - 1 + (perch.float ? 1 : 0))
   }
-  plot(flip(rows), cx, cy, pal)
+  // The food bowl at the right end shows how much context is left.
+  if (typeof x.ctx === 'number') plot(bowlRows(x.ctx), cols - 9, PIX - 4, BOWL_PAL)
+  const id = x.identity ?? { marking: 'none', shiny: false }
+  const dressed = dress(rows, id.marking, x.hat ?? 'none')
+  plot(dir === 1 ? faceRight(dressed) : dressed, cx, cy - HAT_PAD, { ...pal, ...HAT_PAL })
 
   // Companions ahead of the cat.
   const ahead = (w: number) => (dir === 1 ? cx + SPRITE_W + 1 : cx - w - 1)
@@ -673,6 +861,25 @@ export function laneCells(c: Cat, m: Motion, now: number, pal: Palette, cols: nu
   if (busy && m.activity === 'mouse') plot(flip(Math.floor(now / 80) % 2 ? MOUSE_B : MOUSE_A), ahead(7) + dir * 2, PIX - 4, TOYS)
   if (busy && m.activity === 'butterfly') {
     plot(Math.floor(now / 250) % 2 ? FLY_SHUT : FLY_OPEN, ahead(5) + (Math.floor(now / 700) % 2), Math.floor(now / 500) % 2, TOYS)
+  }
+  if (busy && m.activity === 'busy' && c.prop) {
+    const rows = TOOL_ROWS[c.prop]
+    plot(dir === 1 ? rows : faceRight(rows), ahead(rows[0].length), PIX - rows.length, PROP_COLORS)
+  }
+  if (busy && m.activity === 'knock') {
+    const tx = Math.round(m.to * span)
+    const bx = dir === 1 ? tx + SPRITE_W + 1 : tx - TABLE[0].length - 1
+    plot(TABLE, bx, PIX - TABLE.length, PROP_COLORS)
+    plot(MUG, bx + 2, PIX - TABLE.length - MUG.length, PROP_COLORS)
+  }
+  if (busy && m.activity === 'shove') {
+    const bx = ahead(TABLE[0].length)
+    plot(TABLE, bx, PIX - TABLE.length, PROP_COLORS)
+    const k = elapsed / m.dur
+    const mx = bx + 2 + (k < 0.4 ? 0 : dir * Math.round(Math.min(1, (k - 0.4) / 0.2) * 7))
+    const my = PIX - TABLE.length - MUG.length + (k < 0.52 ? 0 : Math.round(Math.min(1, (k - 0.52) / 0.08) * TABLE.length))
+    if (k < 0.6) plot(MUG, mx, my, PROP_COLORS)
+    else plot(['M.m.M'], bx + 2 + dir * 8, PIX - 1, PROP_COLORS)
   }
   if (busy && m.activity === 'laser') {
     const j = [0, 1, -1, 1, 0, -1][Math.floor(now / 90) % 6]
@@ -785,6 +992,15 @@ async function toast($: EngineInterface, text: string) {
   if ((await read($, prefs)).popups) $.ui.toast(text)
 }
 
+// Counts a finished task or a tool call; answers the hats that just unlocked.
+async function bumpStats($: EngineInterface, fn: (s: Stats) => Stats): Promise<typeof HATS> {
+  const before = await read($, stats)
+  const after = fn(before)
+  await update($, stats, () => after)
+  await $.store.set('stats', after)
+  return HATS.filter(h => !h.need(before) && h.need(after))
+}
+
 async function setPrefs($: EngineInterface, fn: (p: Prefs) => Prefs) {
   await update($, prefs, fn)
   await $.store.set('prefs', await read($, prefs))
@@ -803,7 +1019,8 @@ export const register: Register = on => {
   // Where the terminal lane is mounted, for in-place repaints.
   let site: { requestId: string; cols: number } | null = null
   // Assigned in session.start, where the timers live.
-  let wake: (mood: Mood, say: string | null, holdMs: number) => Promise<void> = async () => {}
+  let wake: (mood: Mood, say: string | null, holdMs: number, prop?: ToolProp | null) => Promise<void> = async () => {}
+  let hungry = false
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -836,6 +1053,11 @@ export const register: Register = on => {
         const sign = Math.random() < 0.5 ? 1 : -1
         to = from + sign * (0.15 + Math.random() * 0.3)
         if (to < 0.05 || to > 0.95) to = from - sign * (0.15 + Math.random() * 0.3)
+      } else if (activity === 'knock') {
+        // A table with a mug on it, a little way off.
+        to = from < 0.5 ? from + 0.12 + Math.random() * 0.15 : from - 0.12 - Math.random() * 0.15
+      } else if (activity === 'meter') {
+        to = 0 // the usage numbers sit below the left end
       } else if (activity === 'bird') {
         // Creep a little way toward a bird that has landed nearby.
         to = from < 0.5 ? from + 0.12 + Math.random() * 0.13 : from - 0.12 - Math.random() * 0.13
@@ -863,6 +1085,8 @@ export const register: Register = on => {
       const isLow = fiveHour >= 80
       const isOut = fiveHour >= 100
       const here = posAt(m, now)
+      const ctx = (await read($, limits)).context ?? 0
+      const hour = new Date().getHours()
       let mood = c.mood
 
       if (c.say && now > sayUntil) await update($, cat, x => ({ ...x, say: null }))
@@ -891,6 +1115,7 @@ export const register: Register = on => {
         return
       }
 
+      if (ctx < 85) hungry = false
       if (now >= m.t0 + m.dur) {
         let activity: Activity = 'walk'
         let chain: number | undefined
@@ -899,7 +1124,13 @@ export const register: Register = on => {
           // Some activities lead into the next: a chased mouse may get
           // caught, a stalked bird gets pounced on, the laser zips again.
           let line: string | null = null
-          if (m.activity === 'mouse' && Math.random() < 0.6) activity = 'caught'
+          if (m.activity === 'knock') activity = 'shove'
+          else if (m.activity === 'meter') activity = 'sitmeter'
+          else if (ctx >= 85 && !hungry) {
+            hungry = true
+            activity = 'sit'
+            line = 'my bowl is almost empty…'
+          } else if (m.activity === 'mouse' && Math.random() < 0.6) activity = 'caught'
           else if (m.activity === 'bird') activity = 'flyaway'
           else if (m.activity === 'laser' && (m.chain ?? 0) > 0) {
             activity = 'laser'
@@ -911,13 +1142,14 @@ export const register: Register = on => {
             activity = 'sit'
             line = m.hit ? 'got one! ♥' : 'next time…'
           } else {
-            activity = pick(isLow ? TIRED_ACTIVITIES : IDLE_ACTIVITIES)
+            const isLate = hour >= 23 || hour < 6
+            activity = pick(isLow ? TIRED_ACTIVITIES : isLate ? NIGHT_ACTIVITIES : IDLE_ACTIVITIES)
             if (activity === 'laser') chain = 2 + Math.floor(Math.random() * 3)
           }
           if (activity === 'sit') mood = 'sit'
           // Now and then, say something about it.
           const lines = LINES[activity]
-          const isFollowUp = activity === 'caught' || activity === 'flyaway'
+          const isFollowUp = activity === 'caught' || activity === 'flyaway' || activity === 'shove' || activity === 'sitmeter'
           const isRepeat = activity === 'laser' && m.activity === 'laser'
           if (!line && lines && !isRepeat && (isFollowUp || (!c.say && Math.random() < 0.5))) {
             line = lines[Math.floor(Math.random() * lines.length)]
@@ -925,6 +1157,10 @@ export const register: Register = on => {
           if (line) await say(now, line)
           if (activity === 'caught') cues.push({ at: now + 2100, text: 'hey! come back' })
           if (activity === 'flyaway') cues.push({ at: now + 1600, text: 'nooo come back' })
+          if (activity === 'shove') {
+            cues.push({ at: now + 2100, text: '*CRASH*' })
+            cues.push({ at: now + 3300, text: 'oops :3' })
+          }
         }
         await plan(now, mood, here, activity, chain)
       }
@@ -937,12 +1173,18 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const p = await read($, prefs)
       const pal = PALETTES[p.coat] ?? PALETTES.orange
-      const cells = laneCells(await read($, cat), await read($, motion), now, pal, site.cols, p.scene ?? 'clear')
+      const extras: Extras = {
+        ctx: (await read($, limits)).context,
+        identity: await read($, identity),
+        hat: p.hat ?? 'none',
+        hour: new Date().getHours(),
+      }
+      const cells = laneCells(await read($, cat), await read($, motion), now, pal, site.cols, p.scene ?? 'clear', extras)
       const res = await $.ui.blit({ requestId: site.requestId, key: 'lane', cells, columns: site.cols, rows: 5 })
       if ('deny' in res && res.deny) site = null
     }
 
-    wake = async (mood: Mood, say: string | null, holdMs: number) => {
+    wake = async (mood: Mood, say: string | null, holdMs: number, prop?: ToolProp | null) => {
       const now = await $.clock.now()
       lastActivity = now
       cues = []
@@ -951,16 +1193,36 @@ export const register: Register = on => {
       moodUntil = now + holdMs
       const m = await read($, motion)
       const here = posAt(m, now)
-      if (mood === 'working') {
+      if (mood === 'working' && prop) {
+        // Sit down with the right prop, facing the side with room for it.
+        await update($, motion, () => ({ from: here, to: here, t0: now, dur: holdMs, activity: 'busy' as Activity }))
+        await update($, cat, c => ({ ...c, dir: here < 0.5 ? 1 : -1 }))
+      } else if (mood === 'working') {
         if (!isWalking(m, now) || m.activity !== 'walk') await plan(now, 'working', here, 'walk')
       } else {
         await update($, motion, () => ({ from: here, to: here, t0: now, dur: holdMs, activity: 'sit' as Activity }))
       }
-      await update($, cat, c => ({ ...c, mood, say: say ?? c.say, sayAt: say ? now : c.sayAt, wokeAt: wasAsleep ? now : c.wokeAt }))
+      await update($, cat, c => ({
+        ...c,
+        mood,
+        say: say ?? c.say,
+        sayAt: say ? now : c.sayAt,
+        wokeAt: wasAsleep ? now : c.wokeAt,
+        prop: mood === 'working' ? (prop ?? null) : null,
+      }))
     }
 
     const saved = (await $.store.get('prefs')) as Partial<Prefs> | undefined
     if (saved) await update($, prefs, () => ({ ...DEFAULT_PREFS, ...saved }))
+    // This cat's own look, rolled once: a marking, and a 1 in 50 chance of shiny.
+    let who = (await $.store.get('identity')) as Identity | undefined
+    if (!who) {
+      who = { marking: MARKINGS[Math.floor(Math.random() * MARKINGS.length)], shiny: Math.random() < 1 / 50 }
+      await $.store.set('identity', who)
+    }
+    await update($, identity, () => who as Identity)
+    const counts = (await $.store.get('stats')) as Stats | undefined
+    if (counts) await update($, stats, () => ({ turns: counts.turns ?? 0, tools: counts.tools ?? 0 }))
 
     $.clock.every(BRAIN_MS, () => void brain())
     $.clock.every(BLIT_MS, () => void repaint())
@@ -986,11 +1248,15 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const name = e.tool.replace(/^mcp__[^_]+(?:_[^_]+)*__/, '')
-    await wake('working', `${name}…`, 60 * 60_000)
+    const prop = toolProp(name)
+    await wake('working', `${name}…`, 60 * 60_000, prop)
+    for (const h of await bumpStats($, s => ({ ...s, tools: s.tools + 1 }))) {
+      await toast($, `🎩 Your cat unlocked a hat: ${h.label}! Wear it from ⚙ → Hat`)
+    }
     const ran = await next(e)
     if (ran.deny === undefined && ran.isError === true) {
       await wake('oops', `${name} failed`, 4000)
-      await wake('working', null, 60 * 60_000)
+      await wake('working', null, 60 * 60_000, prop)
     }
 
     return ran
@@ -1000,6 +1266,10 @@ export const register: Register = on => {
     const secs = Math.round(((await $.clock.now()) - turnStartedAt) / 1000)
     if (e.reason === 'answer') {
       await wake('done', `done! ${secs}s`, 8000)
+      for (const h of await bumpStats($, s => ({ ...s, turns: s.turns + 1 }))) {
+        await toast($, `🎩 Your cat unlocked a hat: ${h.label}! Wear it from ⚙ → Hat`)
+        await wake('pet', `new hat: ${h.label}!`, 4000)
+      }
       if (secs >= ANNOUNCE_AFTER_S) await toast($, `🐱 Claude finished (${secs}s)`)
     } else if (e.reason === 'aborted') {
       await wake('sit', 'ok, stopped', 4000)
@@ -1015,6 +1285,9 @@ export const register: Register = on => {
     const find = (kind: string) => e.rateLimits.find(r => r.kind === kind)
     const five = find('five_hour')
     const week = find('seven_day')
+    const before = (await read($, limits)).context
+    const after = e.context.percent ?? null
+    if (before !== null && after !== null && before - after >= 20) await wake('pet', 'nom nom! bowl refilled', 3000)
     await update($, limits, () => ({
       fiveHour: five?.percentUsed ?? null,
       sevenDay: week?.percentUsed ?? null,
@@ -1040,6 +1313,10 @@ export const register: Register = on => {
     const wasHidden = await read($, isHidden)
     await update($, isHidden, () => !wasHidden)
     const l = await read($, limits)
+    const who = await read($, identity)
+    const st = await read($, stats)
+    const owned = unlockedHats(st)
+    const nextHat = HATS.find(h => !h.need(st))
     const pct = (p: number | null) => (p === null ? 'n/a' : `${p}%`)
     return {
       text: [
@@ -1047,6 +1324,10 @@ export const register: Register = on => {
         `5-hour limit: ${pct(l.fiveHour)}${fmtReset(l.fiveHourResets)}`,
         `7-day limit: ${pct(l.sevenDay)}`,
         `Context: ${pct(l.context)}`,
+        '',
+        `Your cat: ${who.marking === 'none' ? 'plain coat' : `${who.marking} marking`}${who.shiny ? ', ✨ shiny (1 in 50)!' : ''}`,
+        `Tasks finished: ${st.turns}, tool calls: ${st.tools}`,
+        `Hats: ${owned.length ? owned.join(', ') : 'none yet'}${nextHat ? ` (next: ${nextHat.label} at ${nextHat.hint})` : ''}`,
       ].join('\n'),
     }
   })
@@ -1089,6 +1370,17 @@ export const register: Register = on => {
     return { element: 'set-popups' }
   })
 
+  on('ui.press', { plugin: 'claude-cat', element: 'set-hat' }, async $ => {
+    const owned = unlockedHats(await read($, stats))
+    if (owned.length === 0) {
+      await wake('sit', `no hats yet! (${HATS[0].hint})`, 3500)
+    } else {
+      await setPrefs($, p => ({ ...p, hat: cycle(['none', ...owned] as Hat[], owned.includes(p.hat) ? p.hat : 'none') }))
+      await wake('pet', 'fancy!', 2500)
+    }
+    return { element: 'set-hat' }
+  })
+
   on('ui.press', { plugin: 'claude-cat', element: 'set-usage' }, async $ => {
     await setPrefs($, p => ({ ...p, showUsage: !p.showUsage }))
     return { element: 'set-usage' }
@@ -1104,6 +1396,10 @@ export const register: Register = on => {
     const l = await read($, limits)
     const pr = await read($, prefs)
     const isSetting = await read($, isSettingsOpen)
+    const who = await read($, identity)
+    const st = await read($, stats)
+    const extras: Extras = { ctx: l.context, identity: who, hat: pr.hat ?? 'none', hour: new Date().getHours() }
+    const isOnStats = m.activity === 'sitmeter' && now < m.t0 + m.dur
     const pal = PALETTES[pr.coat] ?? PALETTES.orange
     const columns = e.viewport?.columns ?? 80
 
@@ -1111,11 +1407,11 @@ export const register: Register = on => {
     if (e.surface === 'terminal') {
       const cols = Math.max(SPRITE_W + 1, Math.min(512, columns - 2))
       site = { requestId: e.requestId, cols }
-      lane = <Raster key="lane" columns={cols} rows={5} cells={laneCells(c, m, now, pal, cols, pr.scene ?? 'clear')} />
+      lane = <Raster key="lane" columns={cols} rows={5} cells={laneCells(c, m, now, pal, cols, pr.scene ?? 'clear', extras)} />
     } else {
       lane = (
         <Svg
-          source={laneSvg(c, m, now, pal, pr.scene ?? 'clear')}
+          source={laneSvg(c, m, now, pal, pr.scene ?? 'clear', extras)}
           alt={`Claude cat (${c.mood})${c.say ? `: ${c.say}` : ''}`}
           width={Math.max(240, Math.round((columns - 2) * DESKTOP_PX_PER_COLUMN))}
           height={LANE_H}
@@ -1142,9 +1438,14 @@ export const register: Register = on => {
               <Button key="set-coat" label={`Coat: ${title(pr.coat)}`} onPress={ignorePress} />
               <Button key="set-speed" label={`Speed: ${title(pr.speed)}`} onPress={ignorePress} />
               <Button key="set-scene" label={`Scene: ${title(pr.scene ?? 'clear')}`} onPress={ignorePress} />
+              <Button key="set-hat" label={unlockedHats(st).length ? `Hat: ${title(pr.hat ?? 'none')}` : 'Hat: 🔒'} onPress={ignorePress} />
               <Button key="set-popups" label={`Popups: ${pr.popups ? 'On' : 'Off'}`} onPress={ignorePress} />
               <Button key="set-usage" label={`Usage: ${pr.showUsage ? 'On' : 'Off'}`} onPress={ignorePress} />
             </Box>
+          ) : pr.showUsage && isOnStats ? (
+            <Text dimColor wrap="truncate-end">
+              🐾 your cat is sitting on your stats (Pet to move it)
+            </Text>
           ) : pr.showUsage ? (
             <Text wrap="truncate-end">
               {fmt('5h', l.fiveHour)}
