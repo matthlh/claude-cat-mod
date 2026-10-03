@@ -804,7 +804,6 @@ export const register: Register = on => {
   let site: { requestId: string; cols: number } | null = null
   // Assigned in session.start, where the timers live.
   let wake: (mood: Mood, say: string | null, holdMs: number) => Promise<void> = async () => {}
-  let goTo: (to: number) => Promise<void> = async () => {}
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -960,28 +959,6 @@ export const register: Register = on => {
       await update($, cat, c => ({ ...c, mood, say: say ?? c.say, sayAt: say ? now : c.sayAt, wokeAt: wasAsleep ? now : c.wokeAt }))
     }
 
-    // A click on the floor: the cat trots over to see what it was.
-    goTo = async (to: number) => {
-      const now = await $.clock.now()
-      lastActivity = now
-      cues = []
-      const c = await read($, cat)
-      const m = await read($, motion)
-      const here = posAt(m, now)
-      to = clamp01(to)
-      const dur = Math.max(400, (Math.abs(to - here) / RUN_PACE[(await read($, prefs)).speed]) * 1000)
-      sayUntil = now + 1500
-      await update($, motion, () => ({ from: here, to, t0: now, dur, activity: 'walk' as Activity }))
-      await update($, cat, x => ({
-        ...x,
-        mood: 'idle',
-        dir: to > here ? 1 : to < here ? -1 : x.dir,
-        say: '!',
-        sayAt: now,
-        wokeAt: c.mood === 'sleep' ? now : x.wokeAt,
-      }))
-    }
-
     const saved = (await $.store.get('prefs')) as Partial<Prefs> | undefined
     if (saved) await update($, prefs, () => ({ ...DEFAULT_PREFS, ...saved }))
 
@@ -1074,46 +1051,11 @@ export const register: Register = on => {
     }
   })
 
-  // Clicks on the lane, from the invisible layer over it (petter.tsx).
-  on('ui.message', async ($, e, next) => {
-    if (e.element !== 'petter') return next(e)
-    const d = e.data as { x?: number; columns?: number } | null
-    const columns = d?.columns ?? 0
-    if (!d || typeof d.x !== 'number' || columns <= 0) return {}
-    const now = await $.clock.now()
-    const c = await read($, cat)
-    const m = await read($, motion)
-    const perch = PERCHES[(await read($, prefs)).scene ?? 'clear']
-    const cur = posAt(m, now)
-
-    // Where the cat is, in columns of the lane, and how close counts.
-    let center: number
-    let reach: number
-    let toPos: (x: number) => number
-    if (e.surface === 'terminal') {
-      const span = Math.max(1, columns - SPRITE_W - 1)
-      const left = isOnPerch(c, m) ? 1 + Math.floor((perch.rows[0].length - SPRITE_W) / 2) : Math.round(cur * span)
-      center = left + SPRITE_W / 2
-      reach = SPRITE_W / 2 + 1
-      toPos = x => (x - SPRITE_W / 2) / span
-    } else {
-      const perCol = DESKTOP_PX_PER_COLUMN
-      const width = columns * perCol
-      const left = isOnPerch(c, m)
-        ? PERCH_X + (perch.rows[0].length * PX - CAT_W) / 2
-        : (cur * MAX_X * width) / 100
-      center = (left + CAT_W / 2) / perCol
-      reach = (CAT_W / 2 + 8) / perCol
-      toPos = x => (x * perCol - CAT_W / 2) / ((MAX_X * width) / 100)
-    }
-
-    if (Math.abs(d.x - center) <= reach) {
-      const lines = c.mood === 'sleep' ? ['mrrp?', '*yawn*'] : ['purrr ♥', 'mrrp!', '♥ ♥ ♥', 'more pets pls']
-      await wake('pet', lines[Math.floor(Math.random() * lines.length)], 3000)
-    } else if (c.mood !== 'working') {
-      await goTo(toPos(d.x))
-    }
-    return {}
+  on('ui.press', { plugin: 'claude-cat', element: 'pet' }, async $ => {
+    const asleep = (await read($, cat)).mood === 'sleep'
+    const lines = asleep ? ['mrrp?', '*yawn*'] : ['purrr ♥', 'mrrp!', '♥ ♥ ♥', 'more pets pls']
+    await wake('pet', lines[Math.floor(Math.random() * lines.length)], 3000)
+    return { element: 'pet' }
   })
 
   on('ui.press', { plugin: 'claude-cat', element: 'hide' }, async $ => {
@@ -1155,7 +1097,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
 
-    const { Box, Text, Button, Raster, Svg, Client } = $.ui.resolve(e) as any
+    const { Box, Text, Button, Raster, Svg } = $.ui.resolve(e) as any
     const now = await $.clock.now()
     const c = await read($, cat)
     const m = await read($, motion)
@@ -1191,13 +1133,8 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Box key="lane-box" flexDirection="row" width="100%" position="relative">
+        <Box flexDirection="row" width="100%">
           {lane}
-          {Client ? (
-            <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-              <Client key="petter" module="./petter.tsx" width="100%" height="100%" />
-            </Box>
-          ) : null}
         </Box>
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2}>
           {isSetting ? (
@@ -1218,6 +1155,7 @@ export const register: Register = on => {
             <Text> </Text>
           )}
           <Box flexDirection="row" columnGap={1} flexShrink={0}>
+            <Button key="pet" label="Pet ♥" onPress={ignorePress} />
             <Button key="settings" label={isSetting ? 'Done' : '⚙'} onPress={ignorePress} />
             <Button key="hide" label="Hide" onPress={ignorePress} />
           </Box>

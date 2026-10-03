@@ -26,8 +26,7 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
   ![The four perches: a cat bed, a tree stump, a cloud and a cat tree](docs/bedtime.svg)
 - **Speech bubbles** that type themselves out, with animated dots, hearts and sparkles.
 - **Little animations** in between: tail wags, ear twitches, a shake when something fails, and drifting z's while it naps.
-- **Click the cat to pet it** (it purrs, with floating hearts, and wakes up if it was asleep). Click anywhere else on the lane and it trots over to see what's there.
-- **Hide** button.
+- **Pet ♥** button (it purrs, with floating hearts, and wakes up if it was asleep) and **Hide** button.
 - **⚙ Settings**, saved across sessions:
   - **Coat:** Orange, Tuxedo, Black, Grey, Cream or Sakura
 
