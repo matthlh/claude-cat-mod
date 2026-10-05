@@ -102,11 +102,3 @@ claude plugin test ~/.claude/mods/claude-cat
 ```
 
 The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity and perch in every scene, so a drawing the engine would refuse fails there instead of silently disappearing.
-
-## Heads-up
-
-Mods run with the same access to your machine as Claude Code itself; they are not sandboxed. This one only reads session usage and draws UI, but read any mod before you install it.
-
-## License
-
-MIT
