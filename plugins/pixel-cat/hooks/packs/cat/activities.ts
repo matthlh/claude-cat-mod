@@ -1,3 +1,4 @@
+import { lunge } from '../../engine/crew'
 import { faceRight, frames, rects } from '../../engine/draw'
 import { HERO_H, LANE_PIX, PX } from '../../engine/geometry'
 import type { Activity, Dir } from '../types'
@@ -234,6 +235,8 @@ export const ACTIVITIES: Record<string, Activity> = {
     move: { stay: 3000 },
     leap: 'pounce',
     pose: { frames: [SIT_PAW] },
+    // The kittens pounce too, one after another.
+    crew: lunge(0.08, 4, { span: 0.16, rise: 2, stagger: 90 }),
     lines: ['got it!', 'gotcha!'],
     cues: [[2100, 'hey! come back']],
     // Pinned under a paw, wriggling, then it slips free and scurries off.

@@ -1,3 +1,5 @@
+import { crewSprites } from '../engine/crew'
+import { HERO_COLS, LANE_PIX } from '../engine/geometry'
 import { HAT_TIERS } from '../engine/hats'
 import { RESERVED_ACTIVITIES } from '../engine/motion'
 import { adventurer } from './adventurer/index'
@@ -15,6 +17,13 @@ export function packProblems(pack: Pack): string[] {
   }
   for (const [id, a] of Object.entries(pack.activities)) {
     if (a.hit !== undefined && !(a.hit >= 0 && a.hit <= 1)) out.push(`activities.${id}.hit is ${a.hit}, not a chance from 0 to 1`)
+    const d = a.crew?.during
+    if (d && !(d[0] >= 0 && d[0] < d[1] && d[1] <= 1)) out.push(`activities.${id}.crew.during is [${d.join(', ')}], not a part of the leg from 0 to 1`)
+  }
+  if (pack.crew) {
+    const room = LANE_PIX - (pack.crew.flying?.height ?? 0)
+    const sizes = crewSprites(pack.crew)
+    if (sizes.some(r => r.length > room || r.some(row => row.length > HERO_COLS))) out.push(`crew sprites must be at most ${HERO_COLS} wide and ${room} tall`)
   }
   if (!Object.hasOwn(pack.scenes, pack.defaults.scene)) out.push(`defaults.scene '${pack.defaults.scene}' is not one of its scenes`)
   if (!Object.hasOwn(pack.coats, pack.defaults.coat)) out.push(`defaults.coat '${pack.defaults.coat}' is not one of its coats`)

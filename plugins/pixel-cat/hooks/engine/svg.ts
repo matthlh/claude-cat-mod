@@ -1,5 +1,6 @@
 import type { HeroState, Motion } from '../../types'
 import type { Bed, Draw, Pack, Palette, Rows, SvgCtx } from '../packs/types'
+import { crewSvg } from './crew'
 import { clamp01, cycleFrames, faceRight, frames, hex, posePeriod, rects } from './draw'
 import { BED_X, HAT_PAD, HEADROOM, HERO_H, HERO_W, LANE_H, MAX_X, PX, SLIDE_MS } from './geometry'
 import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
@@ -196,7 +197,7 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
   ${scene.backdrop(x.hour ?? 12)}
   ${gauge ? `<svg x="100%" y="${HEADROOM}" overflow="visible"><g shape-rendering="crispEdges" transform="translate(${-widthOf(gauge.rows) * PX - 8} ${HERO_H - gauge.rows.length * PX})">${rects(gauge.rows, gauge.pal)}</g></svg>` : ''}
   ${bedSvg(c, m, now, scene.bed)}
-  ${stage}${target}
+  ${stage}${target}${crewSvg({ art: pack.crew, crew: x.crew, m, trail: x.trail, dir, join: act?.crew, now }, pct, cur, QUIET_COLOR)}
   <svg x="${pct(cur)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${glide}
     ${bedOpen}
     <g shape-rendering="crispEdges">

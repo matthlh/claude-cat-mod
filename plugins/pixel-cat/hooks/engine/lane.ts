@@ -1,12 +1,22 @@
-import type { HeroState, Identity, Mood, Motion } from '../../types'
+import type { Follower, HeroState, Identity, Mood, Motion } from '../../types'
 import type { Activity, Dir, Hero, Pack, Palette, Pose, Rows, Scene } from '../packs/types'
+import type { Trail } from './crew'
 import { clamp01, closeEyes } from './draw'
 import { HAT_PAD, HERO_COLS, SLIDE_MS } from './geometry'
 import { IN_BED, RESERVED_ACTIVITIES, TO_BED, isWalking } from './motion'
 
 // What both surfaces need to know about the lane at one moment.
 
-export type Extras = { ctx?: number | null; identity?: Identity; hat?: string; hour?: number }
+export type Extras = {
+  ctx?: number | null
+  identity?: Identity
+  hat?: string
+  hour?: number
+  /** this session's working agents, drawn as the pack's followers (none when absent) */
+  crew?: readonly Follower[]
+  /** the leg before this one, which followers are still finishing while their lag runs out */
+  trail?: Trail
+}
 
 export type Lane = {
   act: Activity | undefined

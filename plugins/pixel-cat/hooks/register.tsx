@@ -1,12 +1,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HeroState, Identity, Limits, Look, Mood, Motion, Phase, Prefs, Speed, Stats, ToolProp } from '../types'
+import type { Follower, HeroState, Identity, Limits, Look, Mood, Motion, Phase, Prefs, Speed, Stats, ToolProp } from '../types'
 import { nextLeg, planLeg, strollPace } from './engine/brain'
 import { laneCells as drawCells } from './engine/cells'
+import { isWorking, muster, workingCount } from './engine/crew'
+import type { Trail } from './engine/crew'
 import { DESKTOP_PX_PER_COLUMN, HERO_COLS, LANE_H, LANE_ROWS, SLIDE_MS } from './engine/geometry'
 import { HAT_TIERS, hatLabel, hatsOf, unlockedHats } from './engine/hats'
-import { activityOf, coatOf, lookOf } from './engine/lane'
+import { activityOf, coatOf, lane as laneAt, lookOf } from './engine/lane'
 import type { Extras } from './engine/lane'
 import { IN_BED, TO_BED, isWalking, posAt } from './engine/motion'
 import { laneSvg as drawSvg } from './engine/svg'
@@ -56,6 +58,9 @@ const prefs = atom({ plugin: 'pixel-cat', key: 'prefs' } as const, DEFAULT_PREFS
 const isSettingsOpen = atom({ plugin: 'pixel-cat', key: 'isSettingsOpen' } as const, false)
 const identity = atom({ plugin: 'pixel-cat', key: 'identity' } as const, { marking: 'none', shiny: false } as Identity)
 const stats = atom({ plugin: 'pixel-cat', key: 'stats' } as const, { turns: 0, tools: 0 } as Stats)
+// This session's working agents. Session state only: every open session would
+// write it once a second, so it never goes near the store (prefs, hats, stats).
+const crew = atom({ plugin: 'pixel-cat', key: 'crew' } as const, [] as Follower[])
 
 const BRAIN_MS = 1000 // how often the hero decides what to do next
 const BLIT_MS = 100 // terminal repaint rate
@@ -74,6 +79,8 @@ export function laneCells(c: HeroState, m: Motion, now: number, coat: Palette, c
 
 // The cat's coats by name, for the tests.
 export const PALETTES = COATS
+
+const sameLeg = (a: Motion, b: Motion) => a.t0 === b.t0 && a.dur === b.dur && a.from === b.from && a.to === b.to && a.activity === b.activity
 
 // What the hero works with for each kind of tool Claude runs.
 function toolProp(name: string): ToolProp | null {
@@ -177,6 +184,16 @@ export const register: Register = on => {
   let cues: { at: number; text: string }[] = []
   // Where the terminal lane is mounted, for in-place repaints.
   let site: { requestId: string; cols: number } | null = null
+  // The leg before the one drawn, and which way the hero faced on it: the
+  // followers finish it while their lag runs out. Seen by the drawings, so it
+  // needs no state of its own; lost on a reload, it costs a step at most.
+  let seen: Trail | undefined
+  let trail: Trail | undefined
+  const trailOf = (m: Motion, dir: 1 | -1): Trail | undefined => {
+    if (seen && !sameLeg(seen.leg, m)) trail = seen
+    seen = { leg: m, dir }
+    return trail
+  }
   // Assigned in session.start, where the timers live.
   let wake: (mood: Mood, say: string | null, holdMs: number, prop?: ToolProp | null) => Promise<void> = async () => {}
   let hungry = false
@@ -305,13 +322,17 @@ export const register: Register = on => {
       const now = await $.clock.now()
       const p = await read($, prefs)
       const pack = packFor(p.pack)
+      const c = await read($, cat)
+      const m = await read($, motion)
       const extras: Extras = {
         ctx: (await read($, limits)).context,
         identity: await read($, identity),
         hat: p.hat,
         hour: new Date().getHours(),
+        crew: await read($, crew),
+        trail: trailOf(m, laneAt(pack, c, m, now, p.scene).dir),
       }
-      const cells = drawCells(pack, await read($, cat), await read($, motion), now, coatOf(pack, p.coat), site.cols, p.scene, extras)
+      const cells = drawCells(pack, c, m, now, coatOf(pack, p.coat), site.cols, p.scene, extras)
       const res = await $.ui.blit({ requestId: site.requestId, key: 'lane', cells, columns: site.cols, rows: LANE_ROWS })
       if ('deny' in res && res.deny) site = null
     }
@@ -356,7 +377,27 @@ export const register: Register = on => {
     const counts = (await $.store.get('stats')) as Stats | undefined
     if (counts) await update($, stats, () => ({ turns: counts.turns ?? 0, tools: counts.tools ?? 0 }))
 
-    $.clock.every(BRAIN_MS, () => void brain())
+    // Once a tick too: who is working, from this session's agent list.
+    let mustering = false
+    const roll = async () => {
+      if (mustering) return
+      mustering = true
+      try {
+        const agents = await $.agent.list()
+        const before = await read($, crew)
+        const after = muster(before, agents, await $.clock.now())
+        if (after !== before) await update($, crew, () => after)
+      } catch {
+        // No list this tick (not bound yet, say): the crew stays as it was.
+      } finally {
+        mustering = false
+      }
+    }
+
+    $.clock.every(BRAIN_MS, () => {
+      void brain()
+      void roll()
+    })
     $.clock.every(BLIT_MS, () => void repaint())
 
     const usage = await $.session.usage()
@@ -454,12 +495,19 @@ export const register: Register = on => {
     const owned = unlockedHats(pack, st).map(id => hatLabel(pack, id))
     const nextHat = hatsOf(pack).find(h => !h.need(st))
     const pct = (p: number | null) => (p === null ? 'n/a' : `${p}%`)
+    let working = workingCount(await read($, crew))
+    try {
+      working = (await $.agent.list()).filter(a => isWorking(a.status)).length
+    } catch {
+      // The last tick's count, then.
+    }
     return {
       text: [
         wasHidden ? pack.text.shown : pack.text.hidden,
         `5-hour limit: ${pct(l.fiveHour)}${fmtReset(l.fiveHourResets)}`,
         `7-day limit: ${pct(l.sevenDay)}`,
         `Context: ${pct(l.context)}`,
+        `Agents working: ${working} (counts this session's agents only)`,
         '',
         `Your ${pack.noun}: ${pack.text.look(lookOf(pack, who))}${who.shiny ? ', ✨ shiny (1 in 50)!' : ''}`,
         `Tasks finished: ${st.turns}, tool calls: ${st.tools}`,
@@ -546,7 +594,14 @@ export const register: Register = on => {
     const who = await read($, identity)
     const st = await read($, stats)
     const pack = packFor(pr.pack)
-    const extras: Extras = { ctx: l.context, identity: who, hat: pr.hat, hour: new Date().getHours() }
+    const extras: Extras = {
+      ctx: l.context,
+      identity: who,
+      hat: pr.hat,
+      hour: new Date().getHours(),
+      crew: await read($, crew),
+      trail: trailOf(m, laneAt(pack, c, m, now, pr.scene).dir),
+    }
     const usageNote = now < m.t0 + m.dur ? activityOf(pack, m.activity)?.usageNote : undefined
     const coat = coatOf(pack, pr.coat)
     const columns = e.viewport?.columns ?? 80

@@ -1,6 +1,7 @@
 import { clamp01 } from '../../engine/draw'
 import type { Pack, Palette } from '../types'
 import { ACTIVITIES } from './activities'
+import { KITTENS } from './crew'
 import { SCENES } from './scenes'
 import { COATS, HERO, MARKINGS } from './sprites'
 
@@ -33,6 +34,7 @@ export const cat: Pack = {
   defaults: { coat: 'orange', scene: 'clear' },
   activities: ACTIVITIES,
   roles: { stroll: 'walk', rest: 'sit', work: 'busy' },
+  crew: KITTENS,
   gauge: ctx => ({ rows: bowlRows(ctx), pal: BOWL_PAL }),
   text: {
     hello: 'hi!',

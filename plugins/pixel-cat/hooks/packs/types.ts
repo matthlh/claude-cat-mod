@@ -143,6 +143,55 @@ export type Move =
 
 export type FollowUp = { activity: string; line?: string }
 
+/**
+ * Followers: one for each agent of this session that is working, trailing
+ * the hero along its path, the nearest first (engine/crew.ts). The engine
+ * moves them; a pack only says how they look. Sprites face LEFT, like the
+ * hero's, at most HERO_COLS wide and LANE_PIX tall (less a flyer's height),
+ * and stand on the ground unless they fly.
+ */
+export type Crew = {
+  /** moving: two frames in turn */
+  move: [Rows, Rows]
+  /** terminal ms per moving frame; a desktop cycle is two of them (default 160) */
+  stride?: number
+  /** on the spot */
+  idle: Pose
+  /** joining in with an activity (Activity.crew), if not the idle pose */
+  act?: Pose
+  /** the happy hop as its agent finishes, before the poof (default the idle pose's first frame) */
+  cheer?: Rows
+  /** colours by slot: the follower in slot n wears coats[n % coats.length] */
+  coats: [Palette, ...Palette[]]
+  /** fly instead of walk: hover `height` sprite px above the ground, bobbing `bob` px (default 1) */
+  flying?: { height: number; bob?: number }
+  /** sprite px between the hero and the first follower, and between followers (default 2) */
+  gap?: number
+  /** ms each follower trails the one ahead of it along the hero's path (default 250) */
+  lag?: number
+  /** the puff it comes and goes in, frames in turn over 400 ms (default the engine's own) */
+  poof?: { frames: [Rows, ...Rows[]]; pal: Palette }
+}
+
+/**
+ * How the followers join in with an activity's leg: a lunge at a foe, timed
+ * to the strike, say. lunge() in engine/crew.ts builds one.
+ */
+export type CrewJoin = {
+  /** the part of the leg (fractions) they join in for: they show Crew.act, moved by `keys` */
+  during: [number, number]
+  /**
+   * [t, dx, dy]: t a fraction of `during`, dx sprite px forward (the way the
+   * hero faces), dy down; eased linearly, at rest outside `during` (default
+   * still)
+   */
+  keys?: [number, number, number][]
+  /** ms each follower starts after the one ahead of it, a ripple down the line (default 0) */
+  stagger?: number
+  /** join in only on legs this says yes to: a strike that lands, say */
+  only?(leg: Motion): boolean
+}
+
 export type Activity = {
   /** how often it comes up on its own: by day, late at night, when the limit runs low */
   weight?: { day?: number; night?: number; tired?: number }
@@ -186,6 +235,8 @@ export type Activity = {
   draw?: Draw
   /** on top of the hero, in its frame and moving with its hops: a swung tool, say (lasts as `draw` does) */
   over?: Draw
+  /** the followers join in (Pack.crew): they show their act pose, moved as it says */
+  crew?: CrewJoin
 }
 
 /** A pack's hat for one unlock tier: its id (the key its dress() draws) and the name it goes by. */
@@ -216,6 +267,8 @@ export type Pack = {
   activities: Record<string, Activity>
   /** the activities the hooks start themselves */
   roles: { stroll: string; rest: string; work: string }
+  /** followers for this session's working agents, drawn behind the hero; none when absent */
+  crew?: Crew
   /** the context gauge at the right end of the lane, by percent used */
   gauge(ctx: number): { rows: Rows; pal: Palette }
   text: {

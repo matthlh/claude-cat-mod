@@ -1,5 +1,6 @@
 import type { HeroState, Motion } from '../../types'
 import type { CellsCtx, Pack, Palette, Rows } from '../packs/types'
+import { crewCells } from './crew'
 import { faceRight } from './draw'
 import { HAT_PAD, HERO_COLS, LANE_PIX, LANE_ROWS, TERMINAL_DEFAULT } from './geometry'
 import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
@@ -127,6 +128,8 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     act.target?.cells(at(Math.round(m.to * span)))
     act.draw?.cells(at(cx))
   }
+  // The followers, beneath the hero as on the desktop.
+  const tag = crewCells({ art: pack.crew, crew: x.crew, m, trail: x.trail, dir, join: act?.crew, now }, cols, span, cx, plot)
   const id = lookOf(pack, x.identity)
   const dressed = wear(pack.hero, heroRows(pack, c, l, now), id.marking, x.hat ?? 'none', l.posture === 'asleep')
   plot(face(dressed), cx, cy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
@@ -149,6 +152,8 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     if (x < 0 || x >= cols || y < 0 || y >= LANE_ROWS) return
     grid.set([ch.codePointAt(0) ?? 0x20, fg, bg], (y * cols + x) * 3)
   }
+
+  if (tag) for (let i = 0; i < tag.text.length; i++) put(tag.x + i, tag.y, tag.text.charAt(i), QUIET_COLOR)
 
   if (l.posture === 'asleep') {
     const z = ['z', 'zZ', 'zZz', ' Zz', '  z'][Math.floor(now / 500) % 5] ?? 'z'

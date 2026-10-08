@@ -101,6 +101,22 @@ export type Prefs = {
   looks?: Record<PackId, Look>
 }
 
+/**
+ * One follower: an agent of this session that is working (a subagent or a
+ * teammate; a workflow's agents are not listed), drawn trailing the hero as
+ * the pack's Pack.crew. Session state only, never written to the store.
+ */
+export type Follower = {
+  /** the agent's id, as $.agent.list() gives it */
+  id: string
+  /** its place in the line, 0 nearest the hero: kept while its agent works, so nobody reshuffles */
+  slot: number
+  /** when it joined, or came back, in ms */
+  since: number
+  /** when its agent stopped working, in ms: it hops, then goes in a poof */
+  leavingAt?: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'pixel-cat': {
@@ -113,6 +129,8 @@ declare module 'claude-code' {
       isSettingsOpen: boolean
       identity: Identity
       stats: Stats
+      /** this session's working agents, by slot (engine/crew.ts muster) */
+      crew: Follower[]
     }
   }
 }
