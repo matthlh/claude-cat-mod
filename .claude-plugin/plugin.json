@@ -1,5 +1,5 @@
 {
-  "name": "claude-cat",
+  "name": "pixel-cat",
   "version": "0.1.0",
   "description": "A little pixel cat that wanders above the Claude Code prompt, watches your usage limits and announces when work finishes",
   "author": { "name": "matthlh" },

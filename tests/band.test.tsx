@@ -5,7 +5,7 @@ test('band draws and buttons respond on each surface', async ($, on) => {
   mock.clock(on)
   for (const surface of ['desktop', 'terminal'] as const) {
     const ui = await $.ui.mount({
-      plugin: 'claude-cat',
+      plugin: 'pixel-cat',
       surface,
       component: 'AbovePrompt',
       props: { hasSurvey: false } as any,

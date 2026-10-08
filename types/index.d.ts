@@ -80,7 +80,7 @@ export type Prefs = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'claude-cat': {
+    'pixel-cat': {
       cat: Cat
       motion: Motion
       limits: Limits

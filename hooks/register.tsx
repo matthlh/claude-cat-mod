@@ -8,27 +8,27 @@ import type { Activity, Cat, Coat, Hat, Identity, Limits, Marking, Mood, Motion,
 // leg of the walk). The frames in between are drawn by the surfaces: the
 // desktop SVG animates itself, and the terminal lane is repainted in place.
 
-const cat = atom({ plugin: 'claude-cat', key: 'cat' } as const, {
+const cat = atom({ plugin: 'pixel-cat', key: 'cat' } as const, {
   mood: 'idle',
   dir: 1,
   say: 'hi!',
   sayAt: 0,
 } as Cat)
-const motion = atom({ plugin: 'claude-cat', key: 'motion' } as const, {
+const motion = atom({ plugin: 'pixel-cat', key: 'motion' } as const, {
   from: 0.1,
   to: 0.1,
   t0: 0,
   dur: 0,
 } as Motion)
-const limits = atom({ plugin: 'claude-cat', key: 'limits' } as const, {
+const limits = atom({ plugin: 'pixel-cat', key: 'limits' } as const, {
   fiveHour: null,
   sevenDay: null,
   context: null,
   fiveHourResets: null,
 } as Limits)
-const isHidden = atom({ plugin: 'claude-cat', key: 'isHidden' } as const, false)
+const isHidden = atom({ plugin: 'pixel-cat', key: 'isHidden' } as const, false)
 const DEFAULT_PREFS: Prefs = { coat: 'orange', speed: 'normal', scene: 'clear', popups: true, showUsage: true, hat: 'none' }
-const prefs = atom({ plugin: 'claude-cat', key: 'prefs' } as const, {
+const prefs = atom({ plugin: 'pixel-cat', key: 'prefs' } as const, {
   coat: 'orange',
   speed: 'normal',
   scene: 'clear',
@@ -36,9 +36,9 @@ const prefs = atom({ plugin: 'claude-cat', key: 'prefs' } as const, {
   showUsage: true,
   hat: 'none',
 } as Prefs)
-const isSettingsOpen = atom({ plugin: 'claude-cat', key: 'isSettingsOpen' } as const, false)
-const identity = atom({ plugin: 'claude-cat', key: 'identity' } as const, { marking: 'none', shiny: false } as Identity)
-const stats = atom({ plugin: 'claude-cat', key: 'stats' } as const, { turns: 0, tools: 0 } as Stats)
+const isSettingsOpen = atom({ plugin: 'pixel-cat', key: 'isSettingsOpen' } as const, false)
+const identity = atom({ plugin: 'pixel-cat', key: 'identity' } as const, { marking: 'none', shiny: false } as Identity)
+const stats = atom({ plugin: 'pixel-cat', key: 'stats' } as const, { turns: 0, tools: 0 } as Stats)
 
 const COATS: Coat[] = ['orange', 'tuxedo', 'black', 'grey', 'cream', 'sakura']
 const SPEEDS: Speed[] = ['chill', 'normal', 'zoomies']
@@ -1332,45 +1332,45 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'pet' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'pet' }, async $ => {
     const asleep = (await read($, cat)).mood === 'sleep'
     const lines = asleep ? ['mrrp?', '*yawn*'] : ['purrr ♥', 'mrrp!', '♥ ♥ ♥', 'more pets pls']
     await wake('pet', lines[Math.floor(Math.random() * lines.length)], 3000)
     return { element: 'pet' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'hide' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'hide' }, async $ => {
     await update($, isHidden, () => true)
     return { element: 'hide' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'settings' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'settings' }, async $ => {
     await update($, isSettingsOpen, open => !open)
     return { element: 'settings' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'set-coat' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'set-coat' }, async $ => {
     await setPrefs($, p => ({ ...p, coat: cycle(COATS, p.coat) }))
     await wake('pet', 'new look!', 2500)
     return { element: 'set-coat' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'set-speed' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'set-speed' }, async $ => {
     await setPrefs($, p => ({ ...p, speed: cycle(SPEEDS, p.speed) }))
     return { element: 'set-speed' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'set-scene' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'set-scene' }, async $ => {
     await setPrefs($, p => ({ ...p, scene: cycle(SCENES, p.scene ?? 'clear') }))
     return { element: 'set-scene' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'set-popups' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'set-popups' }, async $ => {
     await setPrefs($, p => ({ ...p, popups: !p.popups }))
     return { element: 'set-popups' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'set-hat' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'set-hat' }, async $ => {
     const owned = unlockedHats(await read($, stats))
     if (owned.length === 0) {
       await wake('sit', `no hats yet! (${HATS[0].hint})`, 3500)
@@ -1381,7 +1381,7 @@ export const register: Register = on => {
     return { element: 'set-hat' }
   })
 
-  on('ui.press', { plugin: 'claude-cat', element: 'set-usage' }, async $ => {
+  on('ui.press', { plugin: 'pixel-cat', element: 'set-usage' }, async $ => {
     await setPrefs($, p => ({ ...p, showUsage: !p.showUsage }))
     return { element: 'set-usage' }
   })

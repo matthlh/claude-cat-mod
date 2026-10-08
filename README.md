@@ -54,13 +54,13 @@ In the Claude desktop app the whole lane is one SVG that animates itself (smooth
 You need a Claude Code version that supports mods (October 2026 or later).
 
 ```bash
-git clone https://github.com/matthlh/claude-cat-mod ~/.claude/mods/claude-cat
+git clone https://github.com/matthlh/claude-cat-mod ~/.claude/mods/pixel-cat
 ```
 
 **For one session:**
 
 ```bash
-claude --plugin-dir ~/.claude/mods/claude-cat
+claude --plugin-dir ~/.claude/mods/pixel-cat
 ```
 
 **For every session**, in every project and in the desktop app, add this to `~/.claude/settings.json` (merge it into the `env` block if you already have one):
@@ -68,13 +68,15 @@ claude --plugin-dir ~/.claude/mods/claude-cat
 ```json
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/claude-cat",
+    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/pixel-cat",
     "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
   }
 }
 ```
 
-- `CLAUDE_CODE_PLUGIN_DIRS` tells Claude Code where the mod is. It takes absolute paths; separate several folders with `:`.
+On Linux the path is `/home/<you>/.claude/mods/pixel-cat`.
+
+- `CLAUDE_CODE_PLUGIN_DIRS` tells Claude Code where the mod is. It takes absolute paths only: `~` is not expanded, so `~/.claude/mods/pixel-cat` won't load. Separate several folders with `:`.
 - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` turns mods on. They're still rolling out, so without it a session may load the mod's files but not run it.
 
 Then start a new session. Sessions that were already open when you changed the settings won't pick it up until they restart (in the desktop app, start a new chat or quit and reopen the app).
@@ -97,8 +99,8 @@ Edit the grids or the `PALETTE` to make a tuxedo, calico or black cat. In an int
 Check your changes with:
 
 ```bash
-claude plugin validate ~/.claude/mods/claude-cat
-claude plugin test ~/.claude/mods/claude-cat
+claude plugin validate ~/.claude/mods/pixel-cat
+claude plugin test ~/.claude/mods/pixel-cat
 ```
 
 The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity and perch in every scene, so a drawing the engine would refuse fails there instead of silently disappearing.
