@@ -4,7 +4,7 @@ Three mods for [Claude Code](https://claude.com/claude-code), served from one pl
 
 | Plugin | What it is |
 | --- | --- |
-| [`pixel-cat`](plugins/pixel-cat) | A little pixel cat that wanders above the prompt, watches your usage limits and announces when work finishes |
+| [`pixel-cat`](plugins/pixel-cat) | A little pixel cat that wanders above the prompt, watches your usage limits and announces when work finishes. Not a cat person? Switch packs and an adventurer mines, chops trees and fights zombies there instead |
 | [`token-tycoon`](plugins/token-tycoon) | A Claude-themed idle game: prompt to earn tokens, hire agents, upgrade models and infra, and earn from your real Claude Code usage |
 | [`purple-dark`](plugins/purple-dark) | A purple dark colour theme |
 
@@ -50,7 +50,13 @@ Update a mod with `claude plugin update <name>@matthlh`, remove it with `claude 
 
 ![Claude cat poses: walk, walk 2, sit, happy, sleep](plugins/pixel-cat/docs/preview.svg)
 
-Wanders back and forth above the prompt, works alongside Claude with a prop for each tool, announces when a turn finishes, tracks your 5-hour, 7-day and context limits, plays when you're idle and goes to bed on its perch when you're away. Coats, scenes, hats to unlock, and `/cat` to toggle it. [Read more](plugins/pixel-cat/README.md).
+Wanders back and forth above the prompt, works alongside Claude with a prop for each tool, announces when a turn finishes, tracks your 5-hour, 7-day and context limits, plays when you're idle and goes to bed on its perch when you're away. Coats, scenes, hats to unlock, and `/cat` to toggle it.
+
+Everything the hero is and does comes from a **pack**, switched from ⚙ → Pack. The **Adventurer** pack swaps the cat for a Terraria-style hero who mines ore, chops trees, builds walls and staircases, crafts at a workbench and fights zombies and slimes, in a world that goes dark at night:
+
+![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime, working and asleep](plugins/pixel-cat/docs/adventurer-preview.svg)
+
+[Read more](plugins/pixel-cat/README.md), including how to make your own pack.
 
 ### Token Tycoon 🤖
 
@@ -108,7 +114,7 @@ In an interactive session that loads the clone, saving a hooks file hot-reloads 
 
 ```
 .claude-plugin/marketplace.json   the marketplace: one entry per plugin
-plugins/pixel-cat/                hooks, tests, types, docs, README
+plugins/pixel-cat/                hooks (engine + packs), tests, types, docs, README
 plugins/token-tycoon/             hooks, tests, types, docs, README
 plugins/purple-dark/              themes/purple-dark.json, docs, README
 ```
