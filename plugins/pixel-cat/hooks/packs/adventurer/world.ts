@@ -16,7 +16,7 @@
 // front at full strength, so scenery stays darker, cooler or paler than they
 // are, and nothing busy sits behind the hero's legs (y 36..42).
 
-import { frames, hex, num, paths as art } from '../../engine/draw'
+import { faceRight, frames, hex, num, paths as art } from '../../engine/draw'
 import { HEADROOM, HERO_H, LANE_H as H, PX } from '../../engine/geometry'
 import { hourOf as clock, phaseAt } from '../../engine/time'
 import type { Bed, Palette, Rows, Scene } from '../types'
@@ -59,6 +59,116 @@ function stars(spots: [number, number][], fill: string): string {
     .join('')
 }
 
+// ── Tiles ───────────────────────────────────────────────────────────────
+// Blocks are 4 x 4 and tile, drawn with WORLD_PAL. Lit from the top left: a
+// lighter top row and left column, a darker bottom row and right column, so
+// the seams show when they stack. CRACK_n is laid over a block as it is
+// mined. The scenes build their ground from the same tiles (see strip()).
+
+export const WORLD_PAL: Palette = {
+  // leaves: body, shade, light (k is also the grass's highlight)
+  L: 0x4f9d3a, l: 0x2f6b2c, k: 0x92d65e,
+  // bark, its shade; cut wood and its rings
+  T: 0x7a5232, t: 0x51361f, r: 0xe0bb85, R: 0xa97c4b,
+  // grass and its shade; dirt: body, shade, light
+  G: 0x5cb83e, g: 0x3a8a2e, D: 0x96603a, d: 0x6a3f24, e: 0xb88050,
+  // stone: body, shade, light
+  S: 0x8a8f99, s: 0x5c606b, z: 0xb4bac3,
+  // planks: body, shade, light
+  W: 0xbf8a52, w: 0x8a5a30, v: 0xdcae72,
+  // ores: copper, iron, gold, each with its shade
+  C: 0xf0904a, c: 0xa8522a, I: 0xe8c0a0, i: 0xa07058, Y: 0xffd84a, y: 0xc8901a,
+  // cracks
+  x: 0x231c19,
+  // iron: anvil and tool heads, shade, shine
+  A: 0x5b616d, a: 0x3b3f48, h: 0x9fa6b2,
+  // furnace mouth; fire: core, flame, edge
+  K: 0x19161b, f: 0xffe07a, F: 0xff9a2e, o: 0xd9442b,
+}
+
+// Dirt with a pebble (e) and a dark fleck or two (d).
+export const BLOCK_DIRT = ['DDeD', 'eDDd', 'DdDD', 'dDdd']
+// Dirt with grass on top, for the top row of anything built from dirt: a
+// bright lip with a ragged edge that hangs into the dirt.
+export const BLOCK_GRASS = ['kGkG', 'GgDG', 'gDeD', 'dDdd']
+// Stone with a crack in its face.
+export const BLOCK_STONE = ['zzzS', 'zSSs', 'zsSs', 'ssss']
+// Two planks with grain, a dark seam between them.
+export const BLOCK_WOOD = ['vvvv', 'WWwW', 'wwww', 'WvWw']
+// Ore: a vein (light, then shade) running corner to corner through stone.
+export const ORE_BLOCK_COPPER = ['zzCS', 'zCcS', 'CcSs', 'csss']
+export const ORE_BLOCK_IRON = ['zIzS', 'IiSS', 'SSIs', 'ssis']
+export const ORE_BLOCK_GOLD = ['zSYS', 'SYyS', 'YySs', 'ysss']
+// Each stage keeps the last one's cracks and adds more.
+const CRACK_1 = ['....', '.x..', '..x.', '....']
+const CRACK_2 = ['...x', '.xx.', '..x.', '....']
+const CRACK_3 = ['x..x', '.xx.', '..x.', '.x.x']
+export const CRACKS = [CRACK_1, CRACK_2, CRACK_3]
+
+// The top `n` rows of some tiles laid side by side, every other one turned
+// round so the strip doesn't repeat every block: the ground the hero walks
+// on, made of the blocks it builds with.
+function strip(tiles: Rows[], n: number): Rows {
+  return Array.from({ length: n }, (_, y) => tiles.map((t, i) => (i % 2 ? faceRight(t) : t)[y] ?? '').join(''))
+}
+const TURF = strip([BLOCK_GRASS, BLOCK_GRASS, ['GkGG', 'gGDg'], BLOCK_GRASS], 2)
+const STONE_FLOOR = strip([BLOCK_STONE, BLOCK_STONE, ['zzSz', 'zSsS'], BLOCK_STONE], 2)
+
+// ── Layers ──────────────────────────────────────────────────────────────
+// Backdrops are built back to front from layers that repeat across the lane
+// at their own widths, so they never line up the same way twice: the further
+// a layer, the paler and bluer it is (or, at night and underground, the
+// closer to the dark).
+
+// A skyline from column heights, one base-36 digit a column, in pixels: the
+// top pixel of each column is its rim (a), the rest its body (b), the bottom
+// `low` rows its shade (c). `hang` turns it upside down, hanging from the top.
+function ridge(heights: string, rows: number, low = 0, hang = false): Rows {
+  const out = Array.from({ length: rows }, (_, y) =>
+    [...heights]
+      .map(ch => {
+        const top = rows - parseInt(ch, 36)
+        return y < top ? '.' : y === top ? 'a' : y >= rows - low ? 'c' : 'b'
+      })
+      .join(''),
+  )
+  return hang ? out.reverse() : out
+}
+
+// Rows repeated across the lane, `s` px a pixel, from y, the pattern shifted
+// `dx` px so neighbouring layers repeat out of step. The tile keeps a clear
+// pixel row above and below the art: a renderer that smooths a pattern
+// across its wrap would otherwise smear the far edge's colour along the near
+// one as a hairline.
+function layer(id: string, rows: Rows, pal: Palette, y: number, s = 2, dx = 0): string {
+  const w = (rows[0]?.length ?? 0) * s
+  const h = (rows.length + 2) * s
+  return `<pattern id="${id}" x="${dx}" y="${y - s}" width="${w}" height="${h}" patternUnits="userSpaceOnUse">${art(rows, pal, s, 0, s)}</pattern><rect y="${y - s}" width="100%" height="${h}" fill="url(#${id})"/>`
+}
+
+// Rolling far hills, 80 columns of 5 to 11 px: they rise well clear of the
+// treeline in front of them.
+const FAR_HILLS = ridge('abbbbbbbbaaaa999888888899999aaaaaaaaa9998877766655555555555555556666677788899aaa', 11)
+// A treeline of round crowns, 64 columns: rim, body, and a shaded foot.
+const MID_TREES = ridge('7766566653578887546777667776467776666665467776446777656665467888', 8, 2)
+// A near tree, tall enough to frame the lane: A light, a leaves, b shade,
+// t trunk, T its shade.
+const NEAR_TREE = [
+  '....AAab....',
+  '..AAAaaabb..',
+  '.AAaaaaaabb.',
+  'AAaaaaaaabbb',
+  'Aaaaaaaabbbb',
+  'aaaaaaabbbbb',
+  '.aaaaabbbbb.',
+  '..abbbtbbb..',
+  '.....tT.....',
+  '.....tT.....',
+  '.....tT.....',
+  '.....tT.....',
+  '....ttTT....',
+]
+
 // ── Time of day ─────────────────────────────────────────────────────────
 
 const mix = (a: number, b: number, t: number) => {
@@ -69,33 +179,38 @@ const mix = (a: number, b: number, t: number) => {
 // The outdoor light at four times of day; the hours between are blended.
 type Light = {
   top: number; low: number // sky, zenith and horizon
-  far: number // distant hills
-  tree: number; treeLo: number; trunk: number // the treeline
+  far: number; farHi: number // distant hills and their rim
+  mid: number; midHi: number; midLo: number // the treeline
+  tree: number; treeHi: number; treeLo: number; trunk: number // near trees
   grass: number; grassHi: number; grassLo: number; dirt: number; dirtLo: number; dirtHi: number
   orb: number; cloud: number
 }
 const DAY: Light = {
-  top: 0x6aa6d8, low: 0xb2d8ee, far: 0x96bccb,
-  tree: 0x6a9a86, treeLo: 0x557f73, trunk: 0x6d5c50,
-  grass: 0x4f9a41, grassHi: 0x77bd58, grassLo: 0x3b7c35, dirt: 0x93643f, dirtLo: 0x6c472c, dirtHi: 0xae7c52,
-  orb: 0xfff1b5, cloud: 0xf3f8fb,
+  top: 0x5a9de0, low: 0xb6dcf2, far: 0x92bccc, farHi: 0xb0d3df,
+  mid: 0x78a993, midHi: 0x8fbc9f, midLo: 0x64927f,
+  tree: 0x4e8a5d, treeHi: 0x64a068, treeLo: 0x3b6c4c, trunk: 0x5e4a3c,
+  grass: 0x55ab3a, grassHi: 0x86c85a, grassLo: 0x37802c, dirt: 0x8c5a37, dirtLo: 0x633b22, dirtHi: 0xac784b,
+  orb: 0xfff1b5, cloud: 0xf5f9fc,
 }
 const DAWN: Light = {
-  top: 0x6b6cab, low: 0xf0b6a2, far: 0xa092b0,
-  tree: 0x6a7590, treeLo: 0x58627c, trunk: 0x5c4f56,
-  grass: 0x4a8442, grassHi: 0x6ca655, grassLo: 0x37693a, dirt: 0x845a42, dirtLo: 0x603f31, dirtHi: 0x9b6d50,
+  top: 0x6b6cab, low: 0xf0b6a2, far: 0xb09ab6, farHi: 0xcdb1c0,
+  mid: 0x7f7c98, midHi: 0x958aa4, midLo: 0x6b6984,
+  tree: 0x55617a, treeHi: 0x6a7088, treeLo: 0x434d64, trunk: 0x4d4248,
+  grass: 0x4e9441, grassHi: 0x78b25a, grassLo: 0x356e36, dirt: 0x845a42, dirtLo: 0x5a3c2c, dirtHi: 0xa06e50,
   orb: 0xffd8a0, cloud: 0xf6d2ca,
 }
 const DUSK: Light = {
-  top: 0x4c4688, low: 0xee985f, far: 0x8e6e8c,
-  tree: 0x575a76, treeLo: 0x474964, trunk: 0x4d4044,
-  grass: 0x44743c, grassHi: 0x63924c, grassLo: 0x325a35, dirt: 0x795339, dirtLo: 0x58392a, dirtHi: 0x8f6346,
+  top: 0x4c4688, low: 0xee985f, far: 0x9a7090, farHi: 0xc08a8e,
+  mid: 0x6c5f80, midHi: 0x86708a, midLo: 0x58506e,
+  tree: 0x48506a, treeHi: 0x5c5c74, treeLo: 0x383f58, trunk: 0x43383e,
+  grass: 0x467e3c, grassHi: 0x6c9c50, grassLo: 0x325a33, dirt: 0x795339, dirtLo: 0x553828, dirtHi: 0x92664a,
   orb: 0xffb874, cloud: 0xf3b48e,
 }
 const NIGHT: Light = {
-  top: 0x0d1330, low: 0x202c5a, far: 0x141b3a,
-  tree: 0x0e1429, treeLo: 0x0b1022, trunk: 0x0b1022,
-  grass: 0x21482f, grassHi: 0x2d5f3e, grassLo: 0x183726, dirt: 0x302a35, dirtLo: 0x221e27, dirtHi: 0x3b343f,
+  top: 0x0d1330, low: 0x202c5a, far: 0x1a2350, farHi: 0x27336a,
+  mid: 0x121a3a, midHi: 0x1b2650, midLo: 0x0f152e,
+  tree: 0x0c1228, treeHi: 0x141d3c, treeLo: 0x090d1e, trunk: 0x090d1e,
+  grass: 0x21482f, grassHi: 0x2f6040, grassLo: 0x183726, dirt: 0x302a35, dirtLo: 0x221e27, dirtHi: 0x3b343f,
   orb: 0xf3ead0, cloud: 0x26315c,
 }
 
@@ -127,25 +242,14 @@ const SUN = ['..oo..', '.oOOo.', 'oOOOOo', 'oOOOOo', '.oOOo.', '..oo..']
 const MOON = ['..MMM.', '.MMm..', 'MMm...', 'MMm...', 'MMm...', '.MMm..', '..MMM.']
 const CLOUD = ['...ccc....', '.cccccccc.', 'cccccccccc', '.CCCCCCCC.']
 
-// ── Forest ──────────────────────────────────────────────────────────────
-// Sky for the hour (sun by day, moon and stars by night), soft blue hills,
-// a quiet treeline, and grass-topped dirt blocks along the bottom.
+// The turf for a light: grass blocks' top rows, in its colours.
+const turf = (id: string, l: Light) => layer(id, TURF, { G: l.grass, k: l.grassHi, g: l.grassLo, D: l.dirt, d: l.dirtLo, e: l.dirtHi }, GROUND_Y_PX, PX)
 
-const HILL_A = [
-  '..........hhhhhh..............',
-  '......hhhhhhhhhhhhhh..........',
-  '...hhhhhhhhhhhhhhhhhhhhh......',
-  '.hhhhhhhhhhhhhhhhhhhhhhhhhhh..',
-  'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
-]
-const HILL_B = ['.......hhhh.........', '...hhhhhhhhhhhh.....', 'hhhhhhhhhhhhhhhhhhhh']
-// The treeline, 2 CSS px a pixel: smaller than the props, so it reads as
-// further off. a canopy, b its shade, t trunk.
-const PINE = ['...a...', '..aab..', '..aab..', '.aaabb.', '..aab..', '.aaabb.', 'aaaabbb', '.aaabb.', 'aaaabbb', '...t...', '...t...']
-const BUSH = ['..aaab..', '.aaaaabb', 'aaaaaabb', 'aaaaabbb', '.aaabbb.', '..abbb..', '...tt...', '...tt...', '...tt...']
-// Three blocks of grass over dirt: grass behind the hero's legs, dirt behind
-// its boots. The darker pixel every 4 columns is a block's seam.
-const TURF = ['kGGGgGkGGGGg', 'lDeDlDDDlDeD']
+// ── Forest ──────────────────────────────────────────────────────────────
+// Sky for the hour (sun by day, moon and stars by night), then three layers
+// tinted for depth: pale far hills, a hazy treeline of round crowns, a few
+// near trees; and the turf, the top of the same grass blocks the hero digs.
+
 const TUFT = ['k.k.', 'GkGk']
 const FLOWER = ['.y.', 'yoy', '.G.']
 
@@ -154,8 +258,7 @@ function forestSvg(hour: number): string {
   const l = lightAt(h)
   const night = phaseAt(h) === 'night'
   const v = 'advF'
-  const tree = { a: l.tree, b: l.treeLo, t: l.trunk }
-  const defs = `<defs>${skyGrad(`${v}s`, l.top, l.low)}${def(`${v}h`, art(HILL_A, { h: l.far }))}${def(`${v}k`, art(HILL_B, { h: l.far }))}${def(`${v}p`, art(PINE, tree, 2))}${def(`${v}b`, art(BUSH, tree, 2))}${def(`${v}c`, art(CLOUD, { c: l.cloud, C: mix(l.cloud, l.low, 0.5) }, 2))}${def(`${v}t`, art(TUFT, { G: l.grass, k: l.grassHi }, 2))}${night ? '' : def(`${v}f`, art(FLOWER, { y: 0xf2d86a, o: 0xe2774a, G: l.grass }, 2))}</defs>`
+  const defs = `<defs>${skyGrad(`${v}s`, l.top, l.low)}${def(`${v}n`, art(NEAR_TREE, { A: l.treeHi, a: l.tree, b: l.treeLo, t: l.trunk, T: mix(l.trunk, 0, 0.3) }, 2))}${def(`${v}c`, art(CLOUD, { c: l.cloud, C: mix(l.cloud, l.low, 0.5) }, 2))}${def(`${v}t`, art(TUFT, { G: l.grass, k: l.grassHi }, 2))}${night ? '' : def(`${v}f`, art(FLOWER, { y: 0xf2d86a, o: 0xe2774a, G: l.grass }, 2))}</defs>`
   const sky = `<rect width="100%" height="${H}" fill="url(#${v}s)"/>`
   // The sun rises behind the hills on the left at 5:00 and sets on the
   // right after 19:00; the first stars come out at 20:00, and the moon
@@ -172,21 +275,21 @@ function forestSvg(hour: number): string {
     const y = Math.round(3 + 14 * (1 - Math.sin(Math.PI * t)))
     orb = `<svg x="${num(5 + t * 86)}%" y="${y}" overflow="visible"><circle cx="6" cy="6" r="11" fill="${hex(l.orb)}" opacity="0.25"/>${art(SUN, { o: l.orb, O: mix(l.orb, 0xffffff, 0.5) }, 2)}</svg>`
   }
-  const clouds = night ? '' : `<g opacity="0.85">${place(`${v}c`, [[13, 5], [37, 9], [74, 4]])}</g>`
-  const hills = place(`${v}h`, [[-4, GROUND_Y_PX - 15], [22, GROUND_Y_PX - 15], [55, GROUND_Y_PX - 15], [80, GROUND_Y_PX - 15]]) + place(`${v}k`, [[11, GROUND_Y_PX - 9], [40, GROUND_Y_PX - 9], [70, GROUND_Y_PX - 9], [93, GROUND_Y_PX - 9]]) + `<rect y="${GROUND_Y_PX - 3}" width="100%" height="3" fill="${hex(l.far)}"/>`
-  const trees =
-    place(`${v}p`, [[3, GROUND_Y_PX - 22], [17, GROUND_Y_PX - 22], [29, GROUND_Y_PX - 22], [46, GROUND_Y_PX - 22], [62, GROUND_Y_PX - 22], [75, GROUND_Y_PX - 22], [89, GROUND_Y_PX - 22]]) +
-    place(`${v}b`, [[9, GROUND_Y_PX - 18], [24, GROUND_Y_PX - 18], [38, GROUND_Y_PX - 18], [55, GROUND_Y_PX - 18], [68, GROUND_Y_PX - 18], [83, GROUND_Y_PX - 18], [96, GROUND_Y_PX - 18]])
-  const turf = band(`${v}g`, TURF, { G: l.grass, k: l.grassHi, g: l.grassLo, D: l.dirt, l: l.dirtLo, e: l.dirtHi }, GROUND_Y_PX)
+  const clouds = night ? '' : `<g opacity="0.85">${place(`${v}c`, [[13, 4], [37, 8], [74, 3]])}</g>`
+  const far = layer(`${v}h`, FAR_HILLS, { a: l.farHi, b: l.far }, GROUND_Y_PX - FAR_HILLS.length * 2, 2, 40)
+  const mid = layer(`${v}m`, MID_TREES, { a: l.midHi, b: l.mid, c: l.midLo }, GROUND_Y_PX - MID_TREES.length * 2, 2, 7)
+  const near = place(`${v}n`, [[2, 10], [19, 10], [41, 10], [63, 10], [81, 10], [97, 10]])
   const tufts = place(`${v}t`, [[6, GROUND_Y_PX - 4], [21, GROUND_Y_PX - 4], [34, GROUND_Y_PX - 4], [51, GROUND_Y_PX - 4], [66, GROUND_Y_PX - 4], [79, GROUND_Y_PX - 4], [93, GROUND_Y_PX - 4]]) + (night ? '' : place(`${v}f`, [[13, GROUND_Y_PX - 6], [43, GROUND_Y_PX - 6], [72, GROUND_Y_PX - 6], [87, GROUND_Y_PX - 6]]))
-  return `${defs}${lane(`${sky}${orb}${clouds}${hills}${trees}${turf}${tufts}`)}`
+  return `${defs}${lane(`${sky}${orb}${clouds}${far}${mid}${near}${turf(`${v}g`, l)}${tufts}`)}`
 }
 
 // ── Cavern ──────────────────────────────────────────────────────────────
-// A dark rock wall with ore specks, mine supports, two torches throwing a
-// warm flickering glow, stalactites and a stone floor.
+// Three depths of rock: the far wall in near-black mottle with ore glinting
+// in it, torch-lit mounds and a mine's timber supports in the middle, and a
+// fringe of stalactites hanging in front; two torches throw a warm,
+// flickering glow, over a floor of the same stone blocks the hero mines.
 
-// The rock, 16 x 8 pixels at 3 px, repeated: a darker and a lighter mottle.
+// The far wall, 16 x 8 pixels at 3 px, repeated: a darker and a lighter mottle.
 const ROCK = [
   '..aa.........b..',
   '.aaaa.......bb..',
@@ -204,8 +307,9 @@ const SPECKS = {
   gem: ['.g', 'gG'],
 } satisfies Record<string, Rows>
 const SPECK_PAL: Palette = { C: 0xc47a45, c: 0x8f552e, I: 0xb89c88, i: 0x80695b, Y: 0xd9b443, y: 0x9e7c26, g: 0x3fa9b8, G: 0x93e2ec }
-const DRIP = ['ssss', '.sS.', '.s..', '.s..']
-const DRIP_B = ['sss', '.S.']
+// Torch-lit mounds rising from the floor, and the stalactites in front.
+const MOUNDS = ridge('566665554444444433211111112234444433333344555554433222233333221111111234', 6)
+const CEILING = ridge('2222474221112242221124696422232235322223585333221122421113632211', 9, 0, true)
 // A mine support: two posts and a beam, 2 px a pixel.
 const SUPPORT = [
   'BBBBBBBBBBBBBBBBBBBBBB',
@@ -225,32 +329,44 @@ const SUPPORT = [
   '.Pp................Pp.',
   '.Pp................Pp.',
 ]
-const STONE_FLOOR = ['SzSSSSSzSSzS', 'qsssqsssqsss']
 
 function cavernSvg(_hour: number): string {
   const torch = (p: number, begin: number) =>
     at(p, 8, `<circle cx="4.5" cy="4" r="30" fill="url(#advGlow)"><animate attributeName="opacity" values="1;0.7;0.95;0.75;1" dur="1.9s" begin="${begin}s" repeatCount="indefinite"/></circle>${frames(art(TORCH_WALL, WORLD_PAL), art(TORCH_WALL_B, WORLD_PAL), 0.4, begin)}`)
-  const defs = `<defs><radialGradient id="advGlow"><stop offset="0" stop-color="#ffb04a" stop-opacity="0.42"/><stop offset="0.5" stop-color="#ff8a2e" stop-opacity="0.13"/><stop offset="1" stop-color="#ff8a2e" stop-opacity="0"/></radialGradient>${def('advSup', art(SUPPORT, { B: 0x4c3627, b: 0x3a291d, P: 0x45311f, p: 0x33241a }, 2))}${def('advDrip', art(DRIP, { s: 0x37333f, S: 0x46414f }, 2))}${def('advDripB', art(DRIP_B, { s: 0x37333f, S: 0x46414f }, 2))}</defs>`
-  const wall = `<rect width="100%" height="${H}" fill="#25222b"/>${band('advRock', ROCK, { a: 0x1d1b22, b: 0x2e2a35 }, 0, PX, H)}`
-  const specks = ([[7, 9, 'copper'], [13, 26, 'gem'], [23, 30, 'iron'], [34, 5, 'gold'], [41, 18, 'iron'], [52, 27, 'copper'], [58, 4, 'gem'], [74, 27, 'gold'], [80, 13, 'copper'], [88, 6, 'iron'], [95, 22, 'copper']] as [number, number, keyof typeof SPECKS][])
+  const defs = `<defs><radialGradient id="advGlow"><stop offset="0" stop-color="#ffb04a" stop-opacity="0.4"/><stop offset="0.5" stop-color="#ff8a2e" stop-opacity="0.12"/><stop offset="1" stop-color="#ff8a2e" stop-opacity="0"/></radialGradient>${def('advSup', art(SUPPORT, { B: 0x4c3627, b: 0x3a291d, P: 0x45311f, p: 0x33241a }, 2))}</defs>`
+  const wall = `<rect width="100%" height="${H}" fill="#18161d"/>${band('advRock', ROCK, { a: 0x121016, b: 0x201d26 }, 0, PX, H)}`
+  const mounds = layer('advMnd', MOUNDS, { a: 0x3a3442, b: 0x26222d }, H - STONE_FLOOR.length * PX - MOUNDS.length * PX, PX, 50)
+  const specks = ([[7, 9, 'copper'], [13, 22, 'gem'], [23, 26, 'iron'], [34, 5, 'gold'], [41, 15, 'iron'], [52, 24, 'copper'], [58, 4, 'gem'], [74, 22, 'gold'], [80, 13, 'copper'], [88, 6, 'iron'], [95, 20, 'copper']] as [number, number, keyof typeof SPECKS][])
     .map(([p, y, k]) => at(p, y, art(SPECKS[k], SPECK_PAL, 2)))
     .join('')
-  const sparkle = `<g fill="#d8fbff">${[[13.6, 25], [58.6, 3]].map(([p, y]) => `<rect x="${p}%" y="${y}" width="1" height="1"/>`).join('')}<animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.2;1" dur="3.1s" repeatCount="indefinite"/></g>`
+  const sparkle = `<g fill="#d8fbff">${[[13.6, 21], [58.6, 3]].map(([p, y]) => `<rect x="${p}%" y="${y}" width="1" height="1"/>`).join('')}<animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.1;0.2;1" dur="3.1s" repeatCount="indefinite"/></g>`
   const supports = place('advSup', [[28, 0], [69, 0]])
-  const drips = place('advDrip', [[11, 0], [43, 0], [86, 0]]) + place('advDripB', [[19, 0], [53, 0], [62, 0], [97, 0]])
-  const floor = band('advFloor', STONE_FLOOR, { z: 0x5f5b6a, S: 0x4a4652, s: 0x3a3742, q: 0x2c2a33 }, H - STONE_FLOOR.length * PX)
-  return `${defs}${lane(`${wall}${specks}${sparkle}${supports}${drips}${torch(17, 0)}${torch(56, 0.7)}${floor}`)}`
+  const ceiling = layer('advCeil', CEILING, { a: 0x3a3442, b: 0x0e0c12 }, 0, PX, 20)
+  const floor = layer('advFloor', STONE_FLOOR, { z: 0x5c5866, S: 0x47434f, s: 0x34313b }, H - STONE_FLOOR.length * PX, PX)
+  return `${defs}${lane(`${wall}${mounds}${specks}${sparkle}${ceiling}${supports}${torch(17, 0)}${torch(56, 0.7)}${floor}`)}`
 }
 
 // ── Night ───────────────────────────────────────────────────────────────
 // A dark blue sky, a crescent moon that crosses it through the night,
-// twinkling stars and a falling one, dark hills with pines, and fireflies.
+// twinkling stars and a falling one, then three silhouettes, each nearer one
+// darker, rimmed in moonlight: far hills, a treeline, tall pines; fireflies
+// over the turf.
 
-const NIGHT_HILL = [
-  '.........nnnnnn...............',
-  '....nnnnnnnnnnnnnnnn..........',
-  '.nnnnnnnnnnnnnnnnnnnnnnnnn....',
-  'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnn',
+const NIGHT_HILLS = ridge('888888777665544433333333444444333333222222333445566677777777666666777777', 8)
+// A tall pine, 2 px a pixel: a body, A its moonlit edge, t trunk.
+const PINE = [
+  '....A....',
+  '...Aa....',
+  '...Aaa...',
+  '..Aaaa...',
+  '...Aaa...',
+  '..Aaaaa..',
+  '.Aaaaaa..',
+  '..Aaaaa..',
+  '.Aaaaaaa.',
+  'Aaaaaaaaa',
+  '....t....',
+  '....t....',
 ]
 
 function nightSvg(hour: number): string {
@@ -259,18 +375,18 @@ function nightSvg(hour: number): string {
   const t = h >= 18 ? (h - 18) / 12 : h < 6 ? (h + 6) / 12 : 0.5
   const moonX = 8 + t * 78
   const moonY = Math.round(2 + 8 * (1 - Math.sin(Math.PI * (0.1 + 0.8 * t))))
-  const defs = `<defs>${skyGrad('advNs', 0x0b1027, 0x1f2a58)}<radialGradient id="advHalo"><stop offset="0" stop-color="#f3ead0" stop-opacity="0.28"/><stop offset="1" stop-color="#f3ead0" stop-opacity="0"/></radialGradient>${def('advNh', art(NIGHT_HILL, { n: 0x141b3a }))}${def('advNp', art(PINE, { a: 0x0d1329, b: 0x0a0f22, t: 0x0a0f22 }, 2))}</defs>`
+  const defs = `<defs>${skyGrad('advNs', 0x0b1027, 0x1f2a58)}<radialGradient id="advHalo"><stop offset="0" stop-color="#f3ead0" stop-opacity="0.28"/><stop offset="1" stop-color="#f3ead0" stop-opacity="0"/></radialGradient>${def('advNp', art(PINE, { A: 0x18213f, a: 0x0a0e20, t: 0x080b18 }, 2))}</defs>`
   const sky = `<rect width="100%" height="${H}" fill="url(#advNs)"/>`
   const field = stars([[3, 5], [8, 16], [14, 3], [20, 11], [25, 20], [31, 6], [37, 14], [44, 3], [50, 10], [55, 18], [61, 5], [67, 13], [73, 3], [78, 19], [84, 8], [90, 15], [95, 4], [98, 12]], '#e6e8ff')
   const falling = `<svg x="58%" y="2" overflow="visible"><path d="M0 0h2v1h2v1h2v1h-6z" fill="#f4f1ff" opacity="0"><animate attributeName="opacity" values="0;1;0;0" keyTimes="0;0.03;0.07;1" dur="11s" begin="2s" repeatCount="indefinite"/><animateTransform attributeName="transform" type="translate" values="0 0;-40 14;-40 14" keyTimes="0;0.07;1" dur="11s" begin="2s" repeatCount="indefinite"/></path></svg>`
   const moon = at(moonX, moonY, `<circle cx="6" cy="7" r="15" fill="url(#advHalo)"/>${art(MOON, { M: 0xf3ead0, m: 0xcfc6a6 }, 2)}`)
-  const hills = place('advNh', [[-3, GROUND_Y_PX - 12], [21, GROUND_Y_PX - 12], [47, GROUND_Y_PX - 12], [74, GROUND_Y_PX - 12]]) + `<rect y="${GROUND_Y_PX - 3}" width="100%" height="3" fill="#141b3a"/>`
-  const pines = place('advNp', [[6, GROUND_Y_PX - 22], [10, GROUND_Y_PX - 22], [33, GROUND_Y_PX - 22], [52, GROUND_Y_PX - 22], [57, GROUND_Y_PX - 22], [81, GROUND_Y_PX - 22], [92, GROUND_Y_PX - 22]])
-  const turf = band('advNg', TURF, { G: NIGHT.grass, k: NIGHT.grassHi, g: NIGHT.grassLo, D: NIGHT.dirt, l: NIGHT.dirtLo, e: NIGHT.dirtHi }, GROUND_Y_PX)
+  const hills = layer('advNh', NIGHT_HILLS, { a: 0x2a3670, b: 0x19224a }, GROUND_Y_PX - NIGHT_HILLS.length * 2, 2, 30)
+  const trees = layer('advNm', MID_TREES, { a: 0x1c2752, b: 0x111834, c: 0x0d1329 }, GROUND_Y_PX - MID_TREES.length * 2, 2, 90)
+  const pines = place('advNp', [[4, GROUND_Y_PX - 24], [9, GROUND_Y_PX - 24], [31, GROUND_Y_PX - 24], [52, GROUND_Y_PX - 24], [57, GROUND_Y_PX - 24], [80, GROUND_Y_PX - 24], [93, GROUND_Y_PX - 24]])
   const flies = ([[15, 27], [39, 23], [63, 29], [87, 24]] as [number, number][])
     .map(([p, y], i) => `<rect x="${p}%" y="${y}" width="2" height="2" fill="#d6f07a" opacity="0"><animate attributeName="opacity" values="0;0.9;0" dur="${3 + (i % 2)}s" begin="${i * 0.9}s" repeatCount="indefinite"/><animate attributeName="y" values="${y};${y - 5};${y}" dur="${5 + i}s" repeatCount="indefinite"/></rect>`)
     .join('')
-  return `${defs}${lane(`${sky}${field}${falling}${moon}${hills}${pines}${turf}${flies}`)}`
+  return `${defs}${lane(`${sky}${field}${falling}${moon}${hills}${trees}${pines}${turf('advNg', NIGHT)}${flies}`)}`
 }
 
 // ── Cabin ───────────────────────────────────────────────────────────────
@@ -366,30 +482,7 @@ export const ADVENTURER_WORLD: Record<AdventurerScene, Scene> = {
 }
 
 // ── Props ───────────────────────────────────────────────────────────────
-// All drawn with WORLD_PAL, at lane scale. Blocks are 4 x 4 and tile: a
-// lighter top-left and a darker bottom row and right column make the seams
-// when they stack. CRACK_n is laid over a block as it is mined.
-
-export const WORLD_PAL: Palette = {
-  // leaves: body, shade, light
-  L: 0x4f9d3a, l: 0x2f6b2c, k: 0x86c95a,
-  // bark, its shade; cut wood and its rings
-  T: 0x7a5232, t: 0x51361f, r: 0xe0bb85, R: 0xa97c4b,
-  // grass; dirt: body, shade, light
-  G: 0x63b347, g: 0x3f8a36, D: 0x93623c, d: 0x6a4329, e: 0xb07a4d,
-  // stone: body, shade, light
-  S: 0x8b909a, s: 0x5f636d, z: 0xb4b9c2,
-  // planks: body, shade, light
-  W: 0xb98550, w: 0x8a5c33, v: 0xd6a66b,
-  // ores: copper, iron, gold, each with its shade
-  C: 0xe8874a, c: 0xa8562a, I: 0xe6b494, i: 0x9e6f56, Y: 0xf8d24a, y: 0xc8941c,
-  // cracks
-  x: 0x231c19,
-  // iron: anvil and tool heads, shade, shine
-  A: 0x5b616d, a: 0x3b3f48, h: 0x9fa6b2,
-  // furnace mouth; fire: core, flame, edge
-  K: 0x19161b, f: 0xffe07a, F: 0xff9a2e, o: 0xd9442b,
-}
+// All drawn with WORLD_PAL (see Tiles), at lane scale.
 
 export const TREE = [
   '...kLLL...',
@@ -405,20 +498,6 @@ export const TREE = [
 ]
 export const LOG = ['.tTTTTTTTTr.', 'TTttTTTTTrRr', 'TTTTTtTTTRrR', '.tttttttttr.']
 export const STUMP = ['.rrrrrr.', '.rRRRRr.', '.TTtTTt.', '.TtTTtT.', 'TTtTTtTt']
-
-export const BLOCK_DIRT = ['eDDd', 'DDeD', 'DdDD', 'dddd']
-// Dirt with grass on top, for the top row of anything built from dirt.
-export const BLOCK_GRASS = ['GGkG', 'gDgG', 'DeDd', 'dddd']
-export const BLOCK_STONE = ['zzSs', 'zSSs', 'SSSs', 'ssss']
-export const BLOCK_WOOD = ['vWWw', 'wwww', 'Wvww', 'wwww']
-export const ORE_BLOCK_COPPER = ['zCSs', 'SScs', 'CSSC', 'sssc']
-export const ORE_BLOCK_IRON = ['zSIs', 'ISis', 'SSSI', 'siss']
-export const ORE_BLOCK_GOLD = ['zSYs', 'YSys', 'SSSY', 'syss']
-// Each stage keeps the last one's cracks and adds more.
-const CRACK_1 = ['....', '.x..', '..x.', '....']
-const CRACK_2 = ['...x', '.xx.', '..x.', '....']
-const CRACK_3 = ['x..x', '.xx.', '..x.', '.x.x']
-export const CRACKS = [CRACK_1, CRACK_2, CRACK_3]
 
 export const WORKBENCH = ['.a.....A..', '.aa.wwwAa.', 'vvvvvvvvvv', 'WWWWWWWWWW', 'w.wwwwww.w', 'w........w']
 // The horn points left; mirror the rows to face it right.
