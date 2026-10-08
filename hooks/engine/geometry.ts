@@ -7,7 +7,7 @@ export const HERO_H = 30
 // Room above the hero so hops and bounces don't clip its head.
 export const HEADROOM = 12
 export const LANE_H = HERO_H + HEADROOM
-// Hats sit between the ears, in rows padded on above the sprite.
+// Hats sit on the hero's head, in rows padded on above the sprite.
 export const HAT_PAD = 4
 // The desktop reports its width in monospace columns; the SVG wants pixels.
 export const DESKTOP_PX_PER_COLUMN = 8.4

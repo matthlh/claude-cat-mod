@@ -2,7 +2,7 @@ import type { Cat, Identity, Mood, Motion } from '../../types'
 import type { Activity, Dir, Pack, Pose, Scene } from '../packs/types'
 import { clamp01 } from './draw'
 import { SLIDE_MS } from './geometry'
-import { IN_BED, TO_BED, isWalking } from './motion'
+import { IN_BED, RESERVED_ACTIVITIES, TO_BED, isWalking } from './motion'
 
 // What both surfaces need to know about the lane at one moment.
 
@@ -21,8 +21,23 @@ export type Lane = {
   scene: Scene
 }
 
+// Bedtime's legs never resolve to a pack's activity, even one that slipped
+// past packs/index.ts: the bed, not the pack, draws them.
 export function activityOf(pack: Pack, id: string | undefined): Activity | undefined {
-  return id !== undefined && Object.hasOwn(pack.activities, id) ? pack.activities[id] : undefined
+  return id !== undefined && Object.hasOwn(pack.activities, id) && !RESERVED_ACTIVITIES.includes(id) ? pack.activities[id] : undefined
+}
+
+// The identity is rolled once and shared by every pack, but markings belong
+// to a pack. One this pack lacks maps to one of its own, the same one every
+// time, so the hero keeps a look of its own in each pack.
+export function lookOf(pack: Pack, id: Identity | undefined): Identity {
+  const who = id ?? { marking: 'none', shiny: false }
+  const { markings } = pack
+  if (who.marking === 'none' || markings.includes(who.marking)) return who
+  if (markings.length === 0) return { ...who, marking: 'none' }
+  let h = 0
+  for (let i = 0; i < who.marking.length; i++) h = (h * 31 + who.marking.charCodeAt(i)) >>> 0
+  return { ...who, marking: markings[h % markings.length] }
 }
 
 export function lane(pack: Pack, c: Cat, m: Motion, now: number, sceneId: string): Lane {

@@ -59,6 +59,8 @@ function pick(pack: Pack, column: Column): string {
   const options = Object.entries(pack.activities)
     .map(([id, a]) => [id, a.weight?.[column] ?? 0] as const)
     .filter(([, w]) => w > 0)
+  // Every weight column is optional: a pack with nothing for this one strolls.
+  if (options.length === 0) return pack.roles.stroll
   let left = Math.random() * options.reduce((sum, [, w]) => sum + w, 0)
   for (const [id, w] of options) {
     left -= w
@@ -85,9 +87,9 @@ export type Next = {
   fed: boolean
 }
 
-// What follows an idle leg. Some activities lead into the next (a chased
-// mouse may get caught, a stalked bird gets pounced on, the laser zips
-// again); otherwise a fresh pick, weighted by the time of day and the limit.
+// What follows an idle leg. An activity may lead into another (its `then`)
+// or run again (its `repeat`); otherwise a fresh pick, weighted by the time
+// of day and the limit.
 export function nextLeg(pack: Pack, prev: Motion, s: { isHungry: boolean; isLow: boolean; isLate: boolean; isSaying: boolean }): Next {
   const was = activityOf(pack, prev.activity)
   const follow = (): Choice | null => {

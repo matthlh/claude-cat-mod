@@ -2,7 +2,9 @@ import type { Cat, Identity, Mood, Motion, Stats } from '../../types'
 
 // A pack is everything the lane draws and does, as data: the hero's sprites
 // and looks, its scenes, and its activities. The engine (hooks/engine) reads
-// one and never names an activity, sprite or scene itself.
+// one and never names a sprite or scene itself, and names only two activity
+// ids: bedtime's legs, 'bed' and 'perch', which are reserved (see
+// Pack.activities).
 //
 // Sprites are string[] rows facing LEFT: '.' is transparent, every other
 // char a key into a Palette of 0xRRGGBB.
@@ -11,14 +13,18 @@ export type Rows = string[]
 export type Palette = Record<string, number>
 export type Dir = 1 | -1
 
-/** A pose on the spot: one sprite, or two that alternate. */
+/** A pose on the spot: one sprite, or several shown in turn (a swing, a chop). */
 export type Pose = {
-  frames: [Rows] | [Rows, Rows]
-  /** desktop: seconds for one cycle of both frames (default 1) */
+  frames: [Rows, ...Rows[]]
+  /** desktop: seconds for one cycle of all its frames, each an equal share (default 1) */
   period?: number
   /** terminal: ms each frame shows (default 500) */
   tick?: number
-  /** the eyes are already shut: no blinks, no happy squint */
+  /**
+   * The eyes are already shut: no blinks, no happy squint. Desktop blinks lay
+   * closed eyes over the FIRST frame's eyes for the whole pose, so a pose
+   * whose frames move the head should set this too.
+   */
   shut?: boolean
 }
 
@@ -34,7 +40,11 @@ export type Hero = {
   loaf: Rows
   /** shut eyes, for a blink or a happy squint */
   closeEyes(rows: Rows): Rows
-  /** the rows wearing a marking and a hat, padded HAT_PAD rows on top */
+  /**
+   * The rows wearing a marking and a hat, padded HAT_PAD rows on top. The
+   * marking is always 'none' or one of Pack.markings (the engine maps a
+   * marking rolled under another pack onto one of this pack's own).
+   */
   dress(rows: Rows, marking: string, hat: string): Rows
   /** the hats' colours, laid over the coat */
   hatPal: Palette
@@ -63,7 +73,11 @@ type Ctx = {
   face(rows: Rows): Rows
 }
 
-/** Desktop: CSS px in the hero's frame (0..HERO_W wide), or the target's. */
+/**
+ * Desktop: CSS px in a frame HERO_W wide whose left edge is the hero's (for
+ * draw and over) or the destination's (for target); for stage the frame is
+ * the whole lane, from its left edge.
+ */
 export type SvgCtx = Ctx & {
   PX: number
   walking: boolean
@@ -73,17 +87,22 @@ export type SvgCtx = Ctx & {
   ahead(w: number, gap?: number): number
   /** a SMIL begin `ms` after the leg started */
   at(ms: number): string
-  /** a lane position (0..1) as a lane x */
+  /**
+   * A lane position (0..1) as a percentage x: where the hero's left edge is
+   * at that position. Percentages resolve against the frame's width, so this
+   * lands on the lane only in a `stage`; in draw, over and target the frame
+   * is HERO_W px wide.
+   */
   pct(p: number): string
 }
 
 /** Terminal: sprite pixels, one column each, LANE_PIX rows. */
 export type CellsCtx = Ctx & {
-  /** the hero's left column, or the target's */
+  /** the hero's left column (draw, over), the target's (target), or 0 (stage) */
   x: number
   /** column of a thing `w` wide, `gap` columns ahead of the hero */
   ahead(w: number, gap?: number): number
-  /** a lane position (0..1) as a column */
+  /** a lane position (0..1) as a column: the hero's left column there, as pct() */
   col(p: number): number
   plot(rows: Rows, x: number, y: number, pal: Palette): void
 }
@@ -130,10 +149,16 @@ export type Activity = {
   cues?: [number, string][]
   /** while it lasts, the usage line reads this instead */
   usageNote?: string
-  /** ahead of the hero (desktop: always; terminal: while the leg lasts) */
-  draw?: Draw
-  /** at the leg's destination, while the leg lasts */
+  // Layers, bottom to top, the same on both surfaces: stage, target, draw,
+  // the hero, over.
+  /** in the lane's own frame (pct and col place it), beneath everything else, while the leg lasts */
+  stage?: Draw
+  /** at the leg's destination, beneath the hero, while the leg lasts */
   target?: Draw
+  /** ahead of the hero, beneath it (desktop: always; terminal: while the leg lasts) */
+  draw?: Draw
+  /** on top of the hero, in its frame and moving with its hops: a swung tool, say (desktop: always; terminal: while the leg lasts) */
+  over?: Draw
 }
 
 export type HatDef = { id: string; label: string; need(s: Stats): boolean; hint: string }
@@ -150,7 +175,11 @@ export type Pack = {
   markings: string[]
   hats: HatDef[]
   defaults: { coat: string; scene: string }
-  /** in order: the weighted pick walks them in this order */
+  /**
+   * In order: the weighted pick walks them in this order. 'bed' and 'perch'
+   * are bedtime's legs and reserved: packs/index.ts refuses a pack that
+   * defines either (give a pack's own bed activity another id).
+   */
   activities: Record<string, Activity>
   /** the activities the hooks start themselves */
   roles: { stroll: string; rest: string; work: string }

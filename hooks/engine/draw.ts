@@ -31,9 +31,18 @@ export function rects(rows: Rows, pal: Palette, except?: Rows, px = PX): string 
   return out.join('')
 }
 
+// Steps through any number of frames, each shown for an equal share of the
+// period, the first one first.
+export function cycle(list: string[], period: number, until?: number): string {
+  const repeat = until !== undefined ? `repeatDur="${Math.max(1, Math.round(until))}ms"` : 'repeatCount="indefinite"'
+  const anim = (i: number) => {
+    const v = list.map((_, j) => (j === i ? 1 : 0)).join(';')
+    return `<animate attributeName="opacity" values="${v}" dur="${period}s" calcMode="discrete" ${repeat}/>`
+  }
+  return list.map((f, i) => `<g${i ? ' opacity="0"' : ''}>${f}${anim(i)}</g>`).join('')
+}
+
 // Flips between two frames: the first shown for the first half of each period.
 export function frames(a: string, b: string, period: number, until?: number): string {
-  const repeat = until !== undefined ? `repeatDur="${Math.max(1, Math.round(until))}ms"` : 'repeatCount="indefinite"'
-  const anim = (v: string) => `<animate attributeName="opacity" values="${v}" dur="${period}s" calcMode="discrete" ${repeat}/>`
-  return `<g>${a}${anim('1;0')}</g><g opacity="0">${b}${anim('0;1')}</g>`
+  return cycle([a, b], period, until)
 }

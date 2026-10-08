@@ -113,7 +113,7 @@ The sprites are 12×10 grids of letters in [`hooks/packs/cat/sprites.ts`](hooks/
 
 Edit the grids or the `COATS` to make a tuxedo, calico or black cat. In an interactive session, saving the file hot-reloads the mod.
 
-Everything the cat is lives in one pack, [`hooks/packs/cat/`](hooks/packs/cat): its sprites, coats, scenes, hats and activities. The lane machinery in [`hooks/engine/`](hooks/engine) reads a pack through the interface in [`hooks/packs/types.ts`](hooks/packs/types.ts), so a new pack is one folder plus a line in [`hooks/packs/index.ts`](hooks/packs/index.ts). An activity is one entry in the pack's `activities`: its weights, how it moves, its pose, what it leads into, its lines, and its drawing on both surfaces.
+Everything the cat is lives in one pack, [`hooks/packs/cat/`](hooks/packs/cat): its sprites, coats, scenes, hats and activities. The lane machinery in [`hooks/engine/`](hooks/engine) reads a pack through the interface in [`hooks/packs/types.ts`](hooks/packs/types.ts), so a new pack is one folder plus a line in [`hooks/packs/index.ts`](hooks/packs/index.ts). An activity is one entry in the pack's `activities`: its weights, how it moves, its pose, what it leads into, its lines, and its drawing on both surfaces. The engine names only two activity ids itself, bedtime's `bed` and `perch`; they are reserved, and [`hooks/packs/index.ts`](hooks/packs/index.ts) refuses a pack that defines either, or whose `roles` name an activity it doesn't have.
 
 Check your changes with:
 
@@ -122,4 +122,4 @@ claude plugin validate ~/.claude/mods/pixel-cat
 claude plugin test ~/.claude/mods/pixel-cat
 ```
 
-The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity and perch in every scene, so a drawing the engine would refuse fails there instead of silently disappearing.
+The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity of every pack and the bed in every scene, so a drawing the engine would refuse fails there instead of silently disappearing. They also follow every activity's `then` and fail on one that leads nowhere, since a typo there would otherwise become a plain wander.

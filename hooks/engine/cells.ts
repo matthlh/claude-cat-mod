@@ -2,7 +2,7 @@ import type { Cat, Motion } from '../../types'
 import type { CellsCtx, Pack, Palette, Rows } from '../packs/types'
 import { faceRight } from './draw'
 import { HAT_PAD, HERO_COLS, LANE_PIX, LANE_ROWS, TERMINAL_DEFAULT } from './geometry'
-import { bedShown, hasCompanion, isHappy, isInBed, lane, moodColor, QUIET_COLOR } from './lane'
+import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
 import type { Extras, Lane } from './lane'
 import { posAt } from './motion'
 
@@ -48,14 +48,13 @@ function heroRows(pack: Pack, c: Cat, l: Lane, now: number): Rows {
     rows = hero.walk[Math.floor(now / stride) % 2]
   } else {
     const p = l.pose ?? hero.sit
-    const [a, b] = p.frames
-    rows = b && Math.floor(now / (p.tick ?? 500)) % 2 ? b : a
+    rows = p.frames[Math.floor(now / (p.tick ?? 500)) % p.frames.length]
     if (p.shut) return rows
   }
   return isHappy(c.mood) || now % 4000 > 3850 ? hero.closeEyes(rows) : rows
 }
 
-export function laneCells(pack: Pack, c: Cat, m: Motion, now: number, coat: Palette, cols: number, sceneId: string, x: Extras = {}): string {
+export function laneCells(pack: Pack, c: Cat, m: Motion, now: number, palette: Palette, cols: number, sceneId: string, x: Extras = {}): string {
   const l = lane(pack, c, m, now, sceneId)
   const { act, walking, busy, dir, scene } = l
   const bg = scene.bg
@@ -98,27 +97,30 @@ export function laneCells(pack: Pack, c: Cat, m: Motion, now: number, coat: Pale
     const gauge = pack.gauge(x.ctx)
     plot(gauge.rows, cols - gauge.rows[0].length - 1, LANE_PIX - gauge.rows.length, gauge.pal)
   }
-  const id = x.identity ?? { marking: 'none', shiny: false }
-  const dressed = pack.hero.dress(heroRows(pack, c, l, now), id.marking, x.hat ?? 'none')
-  plot(face(dressed), cx, cy - HAT_PAD, { ...coat, ...pack.hero.hatPal })
-
-  // What the activity brings: something at its destination, and ahead of the hero.
+  // What the activity brings, beneath the hero as on the desktop: its stage
+  // (in lane columns), something at its destination, and something ahead.
+  const at = (x0: number, put = plot): CellsCtx => ({
+    leg: m,
+    hero: c,
+    now,
+    dir,
+    scene: l.sceneId,
+    face,
+    x: x0,
+    ahead: (w, gap = 1) => (dir === 1 ? x0 + HERO_COLS + gap : x0 - w - gap),
+    col: p => Math.round(p * span),
+    plot: put,
+  })
   if (busy && act) {
-    const at = (x0: number): CellsCtx => ({
-      leg: m,
-      hero: c,
-      now,
-      dir,
-      scene: l.sceneId,
-      face,
-      x: x0,
-      ahead: (w, gap = 1) => (dir === 1 ? x0 + HERO_COLS + gap : x0 - w - gap),
-      col: p => Math.round(p * span),
-      plot,
-    })
+    act.stage?.cells(at(0))
     act.target?.cells(at(Math.round(m.to * span)))
     act.draw?.cells(at(cx))
   }
+  const id = lookOf(pack, x.identity)
+  const dressed = pack.hero.dress(heroRows(pack, c, l, now), id.marking, x.hat ?? 'none')
+  plot(face(dressed), cx, cy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
+  // Over the hero, moving with its hops.
+  if (busy && act?.over) act.over.cells(at(cx, (rows, x0, y0, pal) => plot(rows, x0, y0 + cy, pal)))
 
   const grid = new Uint32Array(cols * LANE_ROWS * 3)
   for (let y = 0; y < LANE_ROWS; y++) {

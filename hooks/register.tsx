@@ -5,7 +5,7 @@ import type { Cat, Identity, Limits, Mood, Motion, Prefs, Speed, Stats, ToolProp
 import { nextLeg, planLeg, strollPace } from './engine/brain'
 import { laneCells as drawCells } from './engine/cells'
 import { DESKTOP_PX_PER_COLUMN, HERO_COLS, LANE_H, LANE_ROWS, SLIDE_MS } from './engine/geometry'
-import { activityOf } from './engine/lane'
+import { activityOf, lookOf } from './engine/lane'
 import type { Extras } from './engine/lane'
 import { IN_BED, TO_BED, isWalking, posAt } from './engine/motion'
 import { laneSvg as drawSvg } from './engine/svg'
@@ -19,10 +19,11 @@ export type { Extras }
 // leg of the walk). The frames in between are drawn by the surfaces: the
 // desktop SVG animates itself, and the terminal lane is repainted in place.
 
+// It says hello from the first frame, before session.start has run.
 const cat = atom({ plugin: 'pixel-cat', key: 'cat' } as const, {
   mood: 'idle',
   dir: 1,
-  say: null,
+  say: DEFAULT_PACK.text.hello,
   sayAt: 0,
 } as Cat)
 const motion = atom({ plugin: 'pixel-cat', key: 'motion' } as const, {
@@ -175,7 +176,9 @@ export const register: Register = on => {
     })
     lastActivity = await $.clock.now()
     sayUntil = lastActivity + 5000
-    await update($, cat, c => ({ ...c, say: pack.text.hello, sayAt: lastActivity }))
+    // Restart the greeting's typewriter; in another pack, greet in its words.
+    // A later session.start says nothing new once the hello has expired.
+    await update($, cat, c => ({ ...c, say: c.say === DEFAULT_PACK.text.hello ? pack.text.hello : c.say, sayAt: lastActivity }))
 
     // A new leg: what the hero does next, where to, and for how long.
     const plan = async (now: number, mood: Mood, from: number, activity: string, chain?: number) => {
@@ -295,7 +298,8 @@ export const register: Register = on => {
       }))
     }
 
-    // This hero's own look, rolled once: a marking, and a 1 in 50 chance of shiny.
+    // This hero's own look, rolled once: a marking, and a 1 in 50 chance of
+    // shiny. Every pack shares it; lookOf maps the marking into each pack's own.
     let who = (await $.store.get('identity')) as Identity | undefined
     if (!who) {
       who = { marking: pick(pack.markings), shiny: Math.random() < 1 / 50 }
@@ -410,7 +414,7 @@ export const register: Register = on => {
         `7-day limit: ${pct(l.sevenDay)}`,
         `Context: ${pct(l.context)}`,
         '',
-        `Your ${pack.noun}: ${pack.text.look(who)}${who.shiny ? ', ✨ shiny (1 in 50)!' : ''}`,
+        `Your ${pack.noun}: ${pack.text.look(lookOf(pack, who))}${who.shiny ? ', ✨ shiny (1 in 50)!' : ''}`,
         `Tasks finished: ${st.turns}, tool calls: ${st.tools}`,
         `Hats: ${owned.length ? owned.join(', ') : 'none yet'}${nextHat ? ` (next: ${nextHat.label} at ${nextHat.hint})` : ''}`,
       ].join('\n'),

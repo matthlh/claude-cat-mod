@@ -1,8 +1,8 @@
 import type { Cat, Motion } from '../../types'
 import type { Bed, Pack, Palette, Rows, SvgCtx } from '../packs/types'
-import { clamp01, faceRight, frames, hex, rects } from './draw'
+import { clamp01, cycle, faceRight, frames, hex, rects } from './draw'
 import { BED_X, HAT_PAD, HEADROOM, HERO_H, HERO_W, LANE_H, MAX_X, PX, SLIDE_MS } from './geometry'
-import { bedShown, hasCompanion, isHappy, isInBed, lane, moodColor, QUIET_COLOR } from './lane'
+import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
 import type { Extras, Lane } from './lane'
 import { posAt } from './motion'
 
@@ -97,21 +97,22 @@ function heroSvg(pack: Pack, c: Cat, l: Lane, pal: Palette, marking: string, hat
   } else {
     const p = l.pose ?? hero.sit
     const look = p.shut ? (rows: Rows) => rows : eyes
-    const [a, b] = p.frames
-    body = b ? frames(draw(look(a)), draw(look(b)), p.period ?? 1) : draw(look(a))
+    const shown = p.frames.map(f => draw(look(f)))
+    body = shown.length > 1 ? cycle(shown, p.period ?? 1) : shown[0]
   }
-  // Blinks: closed-eye pixels laid over the open eyes for a moment.
+  // Blinks: closed-eye pixels laid over the open eyes of the first frame
+  // for a moment (see Pose.shut for poses whose head moves).
   if (l.posture !== 'loaf' && !isHappy(c.mood) && !l.pose?.shut) {
-    const open = l.posture === 'walk' ? hero.walk[0] : hero.sit.frames[0]
+    const open = l.posture === 'walk' ? hero.walk[0] : (l.pose ?? hero.sit).frames[0]
     body += `<g opacity="0">${rects(dressed(hero.closeEyes(open)), pal, dressed(open))}<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.95;0.98" dur="4s" calcMode="discrete" repeatCount="indefinite"/></g>`
   }
   return body
 }
 
-export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, coat: Palette, sceneId: string, x: Extras = {}): string {
+export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Palette, sceneId: string, x: Extras = {}): string {
   const l = lane(pack, c, m, now, sceneId)
   const { act, walking, busy, dir, scene } = l
-  const id = x.identity ?? { marking: 'none', shiny: false }
+  const id = lookOf(pack, x.identity)
   const cur = posAt(m, now)
   const remaining = walking ? m.t0 + m.dur - now : 0
   const pct = (p: number) => `${(clamp01(p) * MAX_X).toFixed(3)}%`
@@ -130,7 +131,7 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, coat: Palett
     at,
     pct,
   }
-  const body = heroSvg(pack, c, l, { ...coat, ...pack.hero.hatPal }, id.marking, x.hat ?? 'none', remaining)
+  const body = heroSvg(pack, c, l, { ...palette, ...pack.hero.hatPal }, id.marking, x.hat ?? 'none', remaining)
 
   const isPounce = busy && !walking && act?.leap === 'pounce'
   const bounce = c.mood === 'oops'
@@ -151,6 +152,12 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, coat: Palett
   const target = busy && act?.target
     ? `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${act.target.svg(ctx)}</svg>`
     : ''
+  // A stage is in the lane's own frame, where pct() resolves against the lane.
+  const stage = busy && act?.stage
+    ? `<svg x="0" y="${HEADROOM}" width="100%" height="${HERO_H}" overflow="visible"><g shape-rendering="crispEdges">${act.stage.svg(ctx)}</g></svg>`
+    : ''
+  // Over the hero, moving with its hops and bounces.
+  const over = act?.over ? `<g transform="translate(0 ${HAT_PAD * PX})">${act.over.svg(ctx)}</g>` : ''
 
   // In bed: shifted onto it and lifted, after a little hop up.
   let bedOpen = '<g><g><g>'
@@ -171,12 +178,12 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, coat: Palett
   ${scene.backdrop(x.hour ?? 12)}
   ${gauge ? `<svg x="100%" y="${HEADROOM}" overflow="visible"><g shape-rendering="crispEdges" transform="translate(${-gauge.rows[0].length * PX - 8} ${HERO_H - gauge.rows.length * PX})">${rects(gauge.rows, gauge.pal)}</g></svg>` : ''}
   ${bedSvg(c, m, now, scene.bed)}
-  ${target}
+  ${stage}${target}
   <svg x="${pct(cur)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${glide}
     ${bedOpen}
     <g shape-rendering="crispEdges">
       ${act?.draw?.svg(ctx) ?? ''}
-      <g transform="translate(0 ${-HAT_PAD * PX})"><g>${bounce}${body}</g></g>
+      <g transform="translate(0 ${-HAT_PAD * PX})"><g>${bounce}${body}${over}</g></g>
     </g>
     ${floatX ? '' : floaters(c, isNapping)}
     ${id.shiny ? SHINY : ''}
