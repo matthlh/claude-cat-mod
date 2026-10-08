@@ -4,7 +4,9 @@ import type { HeroState, Identity, Mood, Motion, Stats } from '../../types'
 // and looks, its scenes, and its activities. The engine (hooks/engine) reads
 // one and never names a sprite or scene itself, and names only two activity
 // ids: bedtime's legs, 'bed' and 'perch', which are reserved (see
-// Pack.activities).
+// Pack.activities). Those two are the cat's words, kept as they are because
+// saved state and the frozen golden test use them (see engine/motion.ts);
+// they are only ids, and every pack's bed is drawn from its Scene.bed.
 //
 // Sprites are string[] rows facing LEFT: '.' is transparent, every other
 // char a key into a Palette of 0xRRGGBB.
@@ -37,7 +39,7 @@ export type Hero = {
   /** the pose on the spot when the activity has none of its own */
   sit: Pose
   /** asleep, eyes shut */
-  loaf: Rows
+  asleep: Rows
   /** shut eyes, for a blink or a happy squint */
   closeEyes(rows: Rows): Rows
   /**
@@ -107,7 +109,16 @@ export type CellsCtx = Ctx & {
   plot(rows: Rows, x: number, y: number, pal: Palette): void
 }
 
-export type Draw = { svg(ctx: SvgCtx): string; cells(ctx: CellsCtx): void }
+export type Draw = {
+  svg(ctx: SvgCtx): string
+  cells(ctx: CellsCtx): void
+  /**
+   * Desktop: the svg sets its own shape-rendering, so the engine leaves it as
+   * it is instead of putting it in a crispEdges group (stage and target; draw
+   * and over are inside the hero's crisp group either way).
+   */
+  ownEdges?: boolean
+}
 
 /**
  * The hero's body moved off its spot while a leg lasts: a jump attack's arc,
@@ -140,8 +151,8 @@ export type Activity = {
   pace?: number
   /** terminal ms per walking frame, if not the hero's stride */
   stride?: number
-  /** the pose on the spot while it lasts; 'loaf' sleeps */
-  pose?: Pose | 'loaf' | ((hero: HeroState) => Pose | undefined)
+  /** the pose on the spot while it lasts; 'asleep' sleeps (Hero.asleep) */
+  pose?: Pose | 'asleep' | ((hero: HeroState) => Pose | undefined)
   /** a hop on every step, or a pounce as a leg on the spot starts */
   leap?: 'hop' | 'pounce'
   /** the hero's body (and its `over` layer) follows this track while the leg lasts, on top of any leap */

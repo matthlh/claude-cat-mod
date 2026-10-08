@@ -1,5 +1,7 @@
 import { LANE_H as H, TERMINAL_DEFAULT } from '../../engine/geometry'
 import type { Scene } from '../types'
+import { BOWL, RIVER, TANK } from './critters'
+import type { Spot } from './critters'
 
 // Desktop: a backdrop drawn behind the cat, in percent so it fills any width.
 // Time of day: a tint over the sky, by local hour.
@@ -16,9 +18,13 @@ function starsSvg(spots: number[][], opacity: number): string {
     .join('')
 }
 
+// A cat scene also brings the spot the cat fishes at, so a scene is all in
+// one place and one without a spot does not type.
+export type CatScene = Scene & { spot: Spot }
+
 // Each scene's bed is where the cat sleeps. Hidden until bedtime, when it
 // slides in from the left; `float` lifts it off the ground (the night cloud).
-export const SCENES: Record<string, Scene> = {
+export const SCENES: Record<string, CatScene> = {
   clear: {
     label: 'Clear',
     bg: TERMINAL_DEFAULT,
@@ -27,6 +33,7 @@ export const SCENES: Record<string, Scene> = {
       pal: { c: 0x6f63c9, C: 0xb3a9f0 },
       float: 0,
     },
+    spot: BOWL,
     backdrop: hour => (skyAt(hour).isNight ? starsSvg([[12, 6], [38, 10], [63, 5], [88, 9]], 0.5) : ''),
   },
   grass: {
@@ -37,6 +44,7 @@ export const SCENES: Record<string, Scene> = {
       pal: { S: 0xc79a6b, T: 0x7a5234, t: 0x5b3a22 },
       float: 0,
     },
+    spot: RIVER,
     backdrop: hour => {
       const sky = skyAt(hour)
       const tint = sky.tint ? `<rect x="0" y="0" width="100%" height="${H}" rx="6" fill="${sky.color}" opacity="${sky.tint}"/>` : ''
@@ -55,6 +63,7 @@ export const SCENES: Record<string, Scene> = {
       pal: { L: 0xe6e9f7, l: 0xaab1cf },
       float: 5,
     },
+    spot: RIVER,
     backdrop: () => {
       const stars = [[4, 6], [13, 18], [22, 5], [37, 11], [51, 4], [63, 16], [71, 7], [83, 13], [95, 5]]
         .map(([p, y], i) => `<circle cx="${p}%" cy="${y}" r="0.9" fill="#e8e6ff"><animate attributeName="opacity" values="1;0.2;1" dur="${2 + (i % 3)}s" begin="${i * 0.37}s" repeatCount="indefinite"/></circle>`)
@@ -70,6 +79,7 @@ export const SCENES: Record<string, Scene> = {
       pal: { P: 0xc9876b, p: 0x9a5f49, R: 0xd9c08f, r: 0xb39a6a },
       float: 0,
     },
+    spot: TANK,
     backdrop: hour => {
       // A window showing the sky outside, with the moon at night.
       const sky = skyAt(hour)

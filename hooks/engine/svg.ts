@@ -1,5 +1,5 @@
 import type { HeroState, Motion } from '../../types'
-import type { Bed, Pack, Palette, Rows, SvgCtx } from '../packs/types'
+import type { Bed, Draw, Pack, Palette, Rows, SvgCtx } from '../packs/types'
 import { clamp01, cycle, faceRight, frames, hex, rects } from './draw'
 import { BED_X, HAT_PAD, HEADROOM, HERO_H, HERO_W, LANE_H, MAX_X, PX, SLIDE_MS } from './geometry'
 import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
@@ -89,8 +89,8 @@ function heroSvg(pack: Pack, c: HeroState, l: Lane, pal: Palette, marking: strin
   const eyes = (rows: Rows) => (isHappy(c.mood) ? hero.closeEyes(rows) : rows)
 
   let body: string
-  if (l.posture === 'loaf') {
-    body = draw(hero.loaf)
+  if (l.posture === 'asleep') {
+    body = draw(hero.asleep)
   } else if (l.posture === 'walk') {
     const stride = c.mood === 'working' ? hero.rush : l.act?.stride ?? hero.stride
     body = frames(draw(eyes(hero.walk[0])), draw(eyes(hero.walk[1])), (stride * 2) / 1000, remaining)
@@ -102,20 +102,19 @@ function heroSvg(pack: Pack, c: HeroState, l: Lane, pal: Palette, marking: strin
   }
   // Blinks: closed-eye pixels laid over the open eyes of the first frame
   // for a moment (see Pose.shut for poses whose head moves).
-  if (l.posture !== 'loaf' && !isHappy(c.mood) && !l.pose?.shut) {
+  if (l.posture !== 'asleep' && !isHappy(c.mood) && !l.pose?.shut) {
     const open = l.posture === 'walk' ? hero.walk[0] : (l.pose ?? hero.sit).frames[0]
     body += `<g opacity="0">${rects(dressed(hero.closeEyes(open)), pal, dressed(open))}<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.95;0.98" dur="4s" calcMode="discrete" repeatCount="indefinite"/></g>`
   }
   return body
 }
 
-// Pixel art on every layer, as stage, draw and over already are: a target
-// is put in a crispEdges group too, so one drawing helper serves any layer.
-// One that already opens with such a group (the cat's targets, pinned byte
-// for byte by the golden test) is left as it is: the edges are the same.
-const CRISP_OPEN = /^\s*<g shape-rendering="crispEdges"[\s>]/
-function crisp(svg: string): string {
-  return !svg.trim() || CRISP_OPEN.test(svg) ? svg : `<g shape-rendering="crispEdges">${svg}</g>`
+// Pixel art on every layer: stage and target are put in a crispEdges group,
+// as draw and over already are (they sit in the hero's), so one drawing
+// helper serves any layer. A layer whose svg sets its own edges says so
+// (Draw.ownEdges) and is left as it is; an empty one stays empty.
+function crisp(layer: Draw, svg: string): string {
+  return !svg.trim() || layer.ownEdges ? svg : `<g shape-rendering="crispEdges">${svg}</g>`
 }
 
 export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palette: Palette, sceneId: string, x: Extras = {}): string {
@@ -156,14 +155,14 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
     ? `<animate attributeName="x" from="${pct(cur)}" to="${pct(m.to)}" dur="${Math.round(remaining)}ms" fill="freeze"/>`
     : ''
   const bubbleLeft = hasCompanion(act) && busy ? dir === 1 && cur > 0.2 : Math.max(cur, m.to) > 0.55
-  const isNapping = l.posture === 'loaf'
+  const isNapping = l.posture === 'asleep'
   const gauge = typeof x.ctx === 'number' ? pack.gauge(x.ctx) : null
   const target = busy && act?.target
-    ? `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${crisp(act.target.svg(ctx))}</svg>`
+    ? `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${crisp(act.target, act.target.svg(ctx))}</svg>`
     : ''
   // A stage is in the lane's own frame, where pct() resolves against the lane.
   const stage = busy && act?.stage
-    ? `<svg x="0" y="${HEADROOM}" width="100%" height="${HERO_H}" overflow="visible"><g shape-rendering="crispEdges">${act.stage.svg(ctx)}</g></svg>`
+    ? `<svg x="0" y="${HEADROOM}" width="100%" height="${HERO_H}" overflow="visible">${crisp(act.stage, act.stage.svg(ctx))}</svg>`
     : ''
   // Over the hero, moving with its hops and bounces.
   // A layer with nothing for the desktop (a terminal-only one) adds nothing.

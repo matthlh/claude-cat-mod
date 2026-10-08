@@ -14,7 +14,7 @@ export type Lane = {
   /** the leg is still running */
   busy: boolean
   dir: Dir
-  posture: 'walk' | 'sit' | 'loaf'
+  posture: 'walk' | 'sit' | 'asleep'
   /** the activity's own pose on the spot, while the leg runs */
   pose: Pose | undefined
   sceneId: string
@@ -53,8 +53,8 @@ export function lane(pack: Pack, c: HeroState, m: Motion, now: number, sceneId: 
     walking,
     busy,
     dir: m.to > m.from && walking ? 1 : m.to < m.from && walking ? -1 : c.dir,
-    posture: walking ? 'walk' : c.mood === 'sleep' || own === 'loaf' ? 'loaf' : 'sit',
-    pose: own === 'loaf' ? undefined : own,
+    posture: walking ? 'walk' : c.mood === 'sleep' || own === 'asleep' ? 'asleep' : 'sit',
+    pose: own === 'asleep' ? undefined : own,
     sceneId: id,
     scene: pack.scenes[id],
   }

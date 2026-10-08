@@ -43,13 +43,12 @@ export const PROP_COLORS: Palette = {
   T: 0x9a6b47, t: 0x7a5234, M: 0xe8e4da, m: 0xc9c3b5,
 }
 
-// Fishing spots, by scene: G glass, W water, w ripple, s sand, P plant, k stand.
+// Fishing spots (each scene in scenes.ts names its own): G glass, W water, w ripple, s sand, P plant, k stand.
 export type Spot = { rows: Rows; swim?: [number, number, number] } // fish x range and row
-const BOWL: Spot = { rows: ['.G....G.', 'G......G', 'GWWWWWWG', 'GWWWWWWG', 'GWWWWWWG', '.GWWWWG.', '..GGGG..'], swim: [1, 3, 3] }
-const TANK: Spot = {
+export const BOWL: Spot = { rows: ['.G....G.', 'G......G', 'GWWWWWWG', 'GWWWWWWG', 'GWWWWWWG', '.GWWWWG.', '..GGGG..'], swim: [1, 3, 3] }
+export const TANK: Spot = {
   rows: ['GGGGGGGGGG', 'G........G', 'GWWWWWWWWG', 'GWWWWWWWWG', 'GWWWWWWPWG', 'GWWWWWPWWG', 'GssssssPsG', 'kkkkkkkkkk'],
   swim: [1, 5, 3],
 }
-const RIVER: Spot = { rows: ['..WwWWWWWwWW..', '.WWWWWwWWWWWW.', 'WWWWWWWWWWWWWW'] }
-export const SPOTS: Record<string, Spot> = { clear: BOWL, cozy: TANK, grass: RIVER, night: RIVER }
+export const RIVER: Spot = { rows: ['..WwWWWWWwWW..', '.WWWWWwWWWWWW.', 'WWWWWWWWWWWWWW'] }
 export const SPOT_PAL: Palette = { G: 0xcfe8f3, W: 0x3f8fd6, w: 0x9fd0f5, s: 0xe3c78a, P: 0x4caf50, k: 0x5a4a3f }

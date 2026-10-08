@@ -92,7 +92,7 @@ export const HERO: Hero = {
   stride: 160,
   rush: 100,
   sit: { frames: [SIT, SIT_WAG], period: 1.2, tick: 600 },
-  loaf: LOAF.map(r => r.replace(/[HK]/g, 'd')),
+  asleep: LOAF.map(r => r.replace(/[HK]/g, 'd')),
   closeEyes,
   dress,
   hatPal: HAT_PAL,

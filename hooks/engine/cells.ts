@@ -41,7 +41,7 @@ function terminalLine(c: HeroState, now: number): string | null {
 // The hero's sprite this frame, facing left, before it's dressed.
 function heroRows(pack: Pack, c: HeroState, l: Lane, now: number): Rows {
   const { hero } = pack
-  if (l.posture === 'loaf') return hero.loaf
+  if (l.posture === 'asleep') return hero.asleep
   let rows: Rows
   if (l.posture === 'walk') {
     const stride = c.mood === 'working' ? hero.rush : l.act?.stride ?? hero.stride
@@ -99,6 +99,13 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
   }
   // What the activity brings, beneath the hero as on the desktop: its stage
   // (in lane columns), something at its destination, and something ahead.
+  // Before packs the terminal plotted the cat first and these on top, the
+  // reverse of the desktop. Beneath on both surfaces is deliberate; anything
+  // that should cover the hero belongs in `over`. The one drawing that
+  // changed: 'caught' under mood 'sleep' with a coat whose blush differs
+  // from the mouse's tail, where the tail now hides under the sleeping body.
+  // The brain never plans that; it can show for one repaint between the two
+  // state writes at bedtime.
   const at = (x0: number, put = plot): CellsCtx => ({
     leg: m,
     hero: c,
@@ -147,13 +154,13 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     grid.set([ch.codePointAt(0) ?? 0x20, fg, bg], (y * cols + x) * 3)
   }
 
-  if (l.posture === 'loaf') {
+  if (l.posture === 'asleep') {
     const z = ['z', 'zZ', 'zZz', ' Zz', '  z'][Math.floor(now / 500) % 5]
     const zx = dir === 1 || isInBed(c, m) ? cx + HERO_COLS : cx - 4
     for (let i = 0; i < z.length; i++) put(zx + i, 1, z[i], QUIET_COLOR)
   }
 
-  const line = l.posture === 'loaf' ? null : terminalLine(c, now)
+  const line = l.posture === 'asleep' ? null : terminalLine(c, now)
   if (line) {
     const tint = moodColor(c.mood)
     const bw = line.length + 4

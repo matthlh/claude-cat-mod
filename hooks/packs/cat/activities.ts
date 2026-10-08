@@ -2,9 +2,10 @@ import { faceRight, frames, rects } from '../../engine/draw'
 import { HERO_H, LANE_PIX, PX } from '../../engine/geometry'
 import type { Activity, Dir } from '../types'
 import {
-  BIRD, BIRD_DOWN, BIRD_PECK, BIRD_UP, FISH, FLY_OPEN, FLY_SHUT, MOUSE_A, MOUSE_B, MUG, PROP_COLORS, SPOT_PAL, SPOTS,
+  BIRD, BIRD_DOWN, BIRD_PECK, BIRD_UP, FISH, FLY_OPEN, FLY_SHUT, MOUSE_A, MOUSE_B, MUG, PROP_COLORS, SPOT_PAL,
   TABLE, TOOL_ROWS, TOYS, YARN,
 } from './critters'
+import { SCENES } from './scenes'
 import { GROOM_A, GROOM_B, SIT, SIT_PAW } from './sprites'
 
 const scurry = (now: number) => (Math.floor(now / 80) % 2 ? MOUSE_B : MOUSE_A)
@@ -29,7 +30,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     lines: ['*lick lick*', 'grooming…', 'must look good'],
   },
 
-  nap: { weight: { day: 14, night: 50, tired: 45 }, move: { stay: [15_000, 45_000] }, pose: 'loaf' },
+  nap: { weight: { day: 14, night: 50, tired: 45 }, move: { stay: [15_000, 45_000] }, pose: 'asleep' },
 
   hop: { weight: { day: 4 }, pace: 1.4, leap: 'hop', lines: ['wheee', 'boing boing'] },
 
@@ -86,7 +87,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     then: leg => ({ activity: 'sit', line: leg.hit ? 'got one! ♥' : 'next time…' }),
     draw: {
       svg: ({ leg: m, dir, scene, ahead, at }) => {
-        const spot = SPOTS[scene]
+        const spot = SCENES[scene].spot
         const w = spot.rows[0].length * PX
         const h = spot.rows.length * PX
         const x = ahead(w, 2)
@@ -119,7 +120,7 @@ export const ACTIVITIES: Record<string, Activity> = {
       cells: ({ leg: m, now, scene, ahead, plot }) => {
         const elapsed = now - m.t0
         if (elapsed <= 300 || elapsed >= m.dur - 300) return
-        const spot = SPOTS[scene]
+        const spot = SCENES[scene].spot
         const w = spot.rows[0].length
         const h = spot.rows.length
         const px = ahead(w)
@@ -143,7 +144,7 @@ export const ACTIVITIES: Record<string, Activity> = {
         const elapsed = now - m.t0
         const k = (elapsed - (m.dur - 1200)) / 900
         if (!m.hit || elapsed <= 300 || elapsed >= m.dur - 300 || k < 0 || k >= 1) return
-        const spot = SPOTS[scene]
+        const spot = SCENES[scene].spot
         const w = spot.rows[0].length
         const h = spot.rows.length
         const sx = ahead(w) + Math.floor(w / 2)
@@ -163,6 +164,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     then: () => ({ activity: 'flyaway' }),
     // Pecking at the spot the cat is creeping to.
     target: {
+      ownEdges: true,
       svg: ({ ahead, face }) => `
     <g shape-rendering="crispEdges" transform="translate(${ahead(5 * PX)} ${HERO_H - 4 * PX})">${frames(rects(face(BIRD), TOYS), rects(face(BIRD_PECK), TOYS), 0.7)}</g>
   `,
@@ -199,6 +201,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     then: () => ({ activity: 'shove' }),
     thenFirst: true,
     target: {
+      ownEdges: true,
       svg: ({ dir, ahead }) => {
         const x = ahead(TABLE[0].length * PX)
         const [mugX, mugY] = mugAt(x, dir)

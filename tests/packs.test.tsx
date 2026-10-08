@@ -197,9 +197,14 @@ test("a target is crisp pixel art on the desktop, like every other layer", () =>
   const withTarget = (svg: string): Pack => ({ ...pack, activities: { ...pack.activities, probe: { target: { svg: () => svg, cells: () => {} } } } })
   const plain = laneSvg(withTarget('<rect id="t"/>'), c, m, 1000, coat, pack.defaults.scene)
   expect(plain).toMatch(/overflow="visible"><g shape-rendering="crispEdges"><rect id="t"\/><\/g><\/svg>/)
-  // One that is crisp already is left as it is.
+  // One that sets its own edges says so, and is left as it is, on either layer.
   const own = '<g shape-rendering="crispEdges"><rect id="t"/></g>'
-  expect(laneSvg(withTarget(own), c, m, 1000, coat, pack.defaults.scene)).toContain(`overflow="visible">${own}</svg>`)
+  const ownTarget = { ...pack, activities: { ...pack.activities, probe: { target: { svg: () => own, cells: () => {}, ownEdges: true } } } }
+  expect(laneSvg(ownTarget, c, m, 1000, coat, pack.defaults.scene)).toContain(`overflow="visible">${own}</svg>`)
+  const ownStage = { ...pack, activities: { ...pack.activities, probe: { stage: { svg: () => own, cells: () => {}, ownEdges: true } } } }
+  expect(laneSvg(ownStage, c, m, 1000, coat, pack.defaults.scene)).toContain(`width="100%" height="30" overflow="visible">${own}</svg>`)
+  // Without the flag the engine names nothing about the markup: it wraps it.
+  expect(laneSvg(withTarget(own), c, m, 1000, coat, pack.defaults.scene)).toContain(`overflow="visible"><g shape-rendering="crispEdges">${own}</g></svg>`)
 })
 
 test("an activity's track moves the hero's body on both surfaces, and lets go when the leg ends", () => {
