@@ -58,6 +58,8 @@ Everything the hero is and does comes from a pack. Switch packs from ⚙ → **P
 
   ![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime, working and asleep](docs/adventurer-preview.svg)
 
+  The Adventurer pack is fan-made and inspired by Terraria. It is not affiliated with or endorsed by Re-Logic, and Terraria is a trademark of Re-Logic. All of its pixel art is original.
+
 ## Install
 
 Pixel Cat ships from the [matthlh/claude-mods](https://github.com/matthlh/claude-mods) marketplace, together with [Token Tycoon](../token-tycoon) and [Purple Dark](../purple-dark). You need a Claude Code version that supports mods (October 2026 or later); the same steps work on macOS, Linux and Windows. At the Claude Code prompt, type:

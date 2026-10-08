@@ -56,6 +56,8 @@ Everything the hero is and does comes from a **pack**, switched from ⚙ → Pac
 
 ![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime, working and asleep](plugins/pixel-cat/docs/adventurer-preview.svg)
 
+The Adventurer pack is fan-made and inspired by Terraria. It is not affiliated with or endorsed by Re-Logic, and Terraria is a trademark of Re-Logic. All of its pixel art is original.
+
 [Read more](plugins/pixel-cat/README.md), including how to make your own pack.
 
 ### Token Tycoon 🤖
