@@ -11,6 +11,12 @@ export function packProblems(pack: Pack): string[] {
   for (const [role, id] of Object.entries(pack.roles)) {
     if (!Object.hasOwn(pack.activities, id)) out.push(`roles.${role} is '${id}', which is not one of its activities`)
   }
+  for (const [id, a] of Object.entries(pack.activities)) {
+    const arc = a.arc
+    const bad = arc?.some((k, i) => k.length !== 3 || !k.every(Number.isFinite) || k[0] < 0 || (i > 0 && k[0] < arc[i - 1][0]))
+    if (bad) out.push(`activities.${id}.arc is not [ms, dx, dy] keys in time order`)
+    if (a.hit !== undefined && !(a.hit >= 0 && a.hit <= 1)) out.push(`activities.${id}.hit is ${a.hit}, not a chance from 0 to 1`)
+  }
   if (!Object.hasOwn(pack.scenes, pack.defaults.scene)) out.push(`defaults.scene '${pack.defaults.scene}' is not one of its scenes`)
   if (!Object.hasOwn(pack.coats, pack.defaults.coat)) out.push(`defaults.coat '${pack.defaults.coat}' is not one of its coats`)
   return out

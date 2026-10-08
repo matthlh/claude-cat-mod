@@ -1,4 +1,4 @@
-import type { Cat, Identity, Mood, Motion, Stats } from '../../types'
+import type { HeroState, Identity, Mood, Motion, Stats } from '../../types'
 
 // A pack is everything the lane draws and does, as data: the hero's sprites
 // and looks, its scenes, and its activities. The engine (hooks/engine) reads
@@ -65,7 +65,7 @@ export type Scene = {
 /** What both surfaces hand an activity's drawing. */
 type Ctx = {
   leg: Motion
-  hero: Cat
+  hero: HeroState
   now: number
   dir: Dir
   scene: string
@@ -109,6 +109,16 @@ export type CellsCtx = Ctx & {
 
 export type Draw = { svg(ctx: SvgCtx): string; cells(ctx: CellsCtx): void }
 
+/**
+ * The hero's body moved off its spot while a leg lasts: a jump attack's arc,
+ * a knockback. Keyframes of [ms into the leg, dx, dy] in sprite px (dx the
+ * way the hero faces, dy down), in time order, eased linearly from 0, 0 at
+ * the leg's start through each key, and held at the last until the leg
+ * ends; then the body is back on its spot, on both surfaces. Two keys at
+ * the same ms make a jump.
+ */
+export type Track = [number, number, number][]
+
 /** How a leg moves. Absent: wander to a random spot. */
 export type Move =
   /** stay put for a time in ms (a range is rolled); faceRoom turns to the wider side */
@@ -131,12 +141,14 @@ export type Activity = {
   /** terminal ms per walking frame, if not the hero's stride */
   stride?: number
   /** the pose on the spot while it lasts; 'loaf' sleeps */
-  pose?: Pose | 'loaf' | ((hero: Cat) => Pose | undefined)
+  pose?: Pose | 'loaf' | ((hero: HeroState) => Pose | undefined)
   /** a hop on every step, or a pounce as a leg on the spot starts */
   leap?: 'hop' | 'pounce'
+  /** the hero's body (and its `over` layer) follows this track while the leg lasts, on top of any leap */
+  arc?: Track
   /** the hero's mood while it lasts, instead of idle (or tired) */
   mood?: Mood
-  /** the chance this leg ends in a hit (Motion.hit) */
+  /** the chance a leg of it ends in a hit (Motion.hit), whether it stays or moves: a catch, a strike that lands */
   hit?: number
   /** picked fresh, it runs again this many times before its `then` */
   repeat?: [number, number]
@@ -155,9 +167,15 @@ export type Activity = {
   stage?: Draw
   /** at the leg's destination, beneath the hero, while the leg lasts */
   target?: Draw
-  /** ahead of the hero, beneath it (desktop: always; terminal: while the leg lasts) */
+  /**
+   * ahead of the hero, beneath it (desktop: always; terminal: while the leg
+   * lasts). The desktop drawing is made once per leg and stays up until the
+   * next leg replaces it, up to a brain tick (1 s) after this one ends: an
+   * animation meant to be gone by then should end itself (fill="remove", or
+   * end on an invisible frame) rather than freeze.
+   */
   draw?: Draw
-  /** on top of the hero, in its frame and moving with its hops: a swung tool, say (desktop: always; terminal: while the leg lasts) */
+  /** on top of the hero, in its frame and moving with its hops and arc: a swung tool, say (lasts as `draw` does) */
   over?: Draw
 }
 

@@ -1,9 +1,9 @@
 import { test, expect } from 'claude-code/testing'
-import { nextLeg } from '../hooks/engine/brain'
+import { nextLeg, planLeg } from '../hooks/engine/brain'
 import { laneCells } from '../hooks/engine/cells'
 import { LANE_ROWS } from '../hooks/engine/geometry'
 import { lookOf } from '../hooks/engine/lane'
-import { RESERVED_ACTIVITIES } from '../hooks/engine/motion'
+import { RESERVED_ACTIVITIES, trackAt, trackKeys } from '../hooks/engine/motion'
 import { laneSvg } from '../hooks/engine/svg'
 import { DEFAULT_PACK, PACKS, packProblems } from '../hooks/packs/index'
 import type { Activity, Pack } from '../hooks/packs/types'
@@ -171,4 +171,68 @@ test('poses take any number of frames, and layers stack the same on both surface
   const cells = decodeCells(laneCells(staged, c, m, 1000, coat, COLS, pack.defaults.scene))
   const span = COLS - 12 - 1
   expect(cells[(4 * COLS + span) * 3 + 1]).toBe(INK)
+})
+
+test('a hit chance is rolled on moving legs as well as legs on the spot', () => {
+  const pack = (a: Activity): Pack => ({ ...DEFAULT_PACK, activities: { ...DEFAULT_PACK.activities, probe: a } })
+  for (const move of [undefined, { near: [0.1, 0.2] }, { zip: [0.1, 0.3] }, { spot: 0.8 }, { stay: 1000 }] as Activity['move'][]) {
+    for (let i = 0; i < 20; i++) {
+      expect(planLeg(pack({ move, hit: 1 }), 0, 'idle', 0.3, 'probe', 'normal').leg.hit).toBe(true)
+      expect(planLeg(pack({ move, hit: 0 }), 0, 'idle', 0.3, 'probe', 'normal').leg.hit).toBe(false)
+    }
+    // No chance, no roll: a moving leg carries no hit at all.
+    const plain = planLeg(pack({ move }), 0, 'idle', 0.3, 'probe', 'normal').leg
+    if (!move || !('stay' in move)) expect(Object.hasOwn(plain, 'hit')).toBe(false)
+    expect(plain.hit).toBeUndefined()
+  }
+  const bad = { ...DEFAULT_PACK, activities: { ...DEFAULT_PACK.activities, probe: { hit: 2 }, probe2: { arc: [[100, 0, 0], [50, 1, 1]] as [number, number, number][] } } }
+  expect(packProblems(bad).length).toBe(2)
+})
+
+test("a target is crisp pixel art on the desktop, like every other layer", () => {
+  const pack = DEFAULT_PACK
+  const coat = pack.coats[pack.defaults.coat]
+  const c = { mood: 'idle' as const, dir: 1 as const, say: null }
+  const m: Motion = { from: 0.2, to: 0.6, t0: 0, dur: 10_000, activity: 'probe' }
+  const withTarget = (svg: string): Pack => ({ ...pack, activities: { ...pack.activities, probe: { target: { svg: () => svg, cells: () => {} } } } })
+  const plain = laneSvg(withTarget('<rect id="t"/>'), c, m, 1000, coat, pack.defaults.scene)
+  expect(plain).toMatch(/overflow="visible"><g shape-rendering="crispEdges"><rect id="t"\/><\/g><\/svg>/)
+  // One that is crisp already is left as it is.
+  const own = '<g shape-rendering="crispEdges"><rect id="t"/></g>'
+  expect(laneSvg(withTarget(own), c, m, 1000, coat, pack.defaults.scene)).toContain(`overflow="visible">${own}</svg>`)
+})
+
+test("an activity's track moves the hero's body on both surfaces, and lets go when the leg ends", () => {
+  // A leap forward and back down, then a knockback held to the end.
+  const arc: [number, number, number][] = [[200, 4, -3], [400, 6, 0], [400, -2, 0], [600, -2, 0]]
+  expect(trackAt(arc, 0)).toEqual([0, 0])
+  expect(trackAt(arc, 100)).toEqual([2, -1.5])
+  expect(trackAt(arc, 400)).toEqual([-2, 0])
+  expect(trackAt(arc, 5000)).toEqual([-2, 0])
+  expect(trackKeys(arc, 1000)).toEqual([[0, 0, 0], [0.2, 4, -3], [0.4, 6, 0], [0.4, -2, 0], [0.6, -2, 0], [1, -2, 0]])
+
+  const pack = DEFAULT_PACK
+  const coat = pack.coats[pack.defaults.coat]
+  const probe: Pack = { ...pack, activities: { ...pack.activities, probe: { move: { stay: 1000 }, arc } } }
+  const plain: Pack = { ...pack, activities: { ...pack.activities, probe: { move: { stay: 1000 } } } }
+  const m: Motion = { from: 0.5, to: 0.5, t0: 0, dur: 1000, activity: 'probe' }
+  for (const dir of [1, -1] as const) {
+    const c = { mood: 'idle' as const, dir, say: null }
+    const svg = laneSvg(probe, c, m, 100, coat, pack.defaults.scene)
+    expect(svg).toContain(`values="0 0;${dir * 12} -9;${dir * 18} 0;${dir * -6} 0;${dir * -6} 0;${dir * -6} 0" keyTimes="0;0.2;0.4;0.4;0.6;1" dur="1000ms" begin="-100ms"/>`)
+    expect(laneSvg(probe, c, m, 2000, coat, pack.defaults.scene)).not.toContain('keyTimes="0;0.2')
+
+    // The terminal: the body where the track has it, then back on its spot.
+    const ink = (pk: Pack, now: number) => {
+      const cells = decodeCells(laneCells(pk, c, m, now, coat, COLS, pack.defaults.scene))
+      const cols: number[] = []
+      for (let x = 0; x < COLS; x++) {
+        for (let y = 0; y < LANE_ROWS; y++) if (cells[(y * COLS + x) * 3] !== 0x20) { cols.push(x); break }
+      }
+      return cols[0]
+    }
+    expect(ink(probe, 500) - ink(plain, 500)).toBe(dir * -2)
+    expect(ink(probe, 300) - ink(plain, 300)).toBe(dir * 5)
+    expect(ink(probe, 2000)).toBe(ink(plain, 2000))
+  }
 })

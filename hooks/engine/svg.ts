@@ -1,10 +1,10 @@
-import type { Cat, Motion } from '../../types'
+import type { HeroState, Motion } from '../../types'
 import type { Bed, Pack, Palette, Rows, SvgCtx } from '../packs/types'
 import { clamp01, cycle, faceRight, frames, hex, rects } from './draw'
 import { BED_X, HAT_PAD, HEADROOM, HERO_H, HERO_W, LANE_H, MAX_X, PX, SLIDE_MS } from './geometry'
 import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
 import type { Extras, Lane } from './lane'
-import { posAt } from './motion'
+import { posAt, trackKeys } from './motion'
 
 // ── Desktop: one self-animating SVG for the whole lane ──────────────────
 
@@ -12,7 +12,7 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function bubbleSvg(c: Cat, onLeft: boolean, tint: number): string {
+function bubbleSvg(c: HeroState, onLeft: boolean, tint: number): string {
   if (!c.say) return ''
   const raw = c.say.length > 28 ? c.say.slice(0, 27) + '…' : c.say
   const hasDots = raw.endsWith('…')
@@ -44,7 +44,7 @@ function bubbleSvg(c: Cat, onLeft: boolean, tint: number): string {
   </g>`
 }
 
-function floaters(c: Cat, isNapping: boolean): string {
+function floaters(c: HeroState, isNapping: boolean): string {
   // Little particles that drift up from the hero's head.
   const drift = (glyph: string, x: number, delay: number, color: string, size: number) =>
     `<text x="${x}" y="8" font-size="${size}" fill="${color}" opacity="0">${glyph}
@@ -64,7 +64,7 @@ const SHINY = [[3, 2, 0], [31, 9, 1.3], [17, -6, 2.1]]
 const BOB = '<animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0" dur="3s" repeatCount="indefinite"/>'
 
 // The bed, sliding in at bedtime and out on waking, in lane coordinates.
-function bedSvg(c: Cat, m: Motion, now: number, bed: Bed): string {
+function bedSvg(c: HeroState, m: Motion, now: number, bed: Bed): string {
   const shown = bedShown(c, m, now)
   if (shown === null) return ''
   const w = bed.rows[0].length * PX
@@ -79,7 +79,7 @@ function bedSvg(c: Cat, m: Motion, now: number, bed: Bed): string {
 }
 
 // The hero's body, dressed and facing the way it's going, with blinks.
-function heroSvg(pack: Pack, c: Cat, l: Lane, pal: Palette, marking: string, hat: string, remaining: number): string {
+function heroSvg(pack: Pack, c: HeroState, l: Lane, pal: Palette, marking: string, hat: string, remaining: number): string {
   const { hero } = pack
   const dressed = (rows: Rows) => {
     const d = hero.dress(rows, marking, hat)
@@ -109,7 +109,16 @@ function heroSvg(pack: Pack, c: Cat, l: Lane, pal: Palette, marking: string, hat
   return body
 }
 
-export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Palette, sceneId: string, x: Extras = {}): string {
+// Pixel art on every layer, as stage, draw and over already are: a target
+// is put in a crispEdges group too, so one drawing helper serves any layer.
+// One that already opens with such a group (the cat's targets, pinned byte
+// for byte by the golden test) is left as it is: the edges are the same.
+const CRISP_OPEN = /^\s*<g shape-rendering="crispEdges"[\s>]/
+function crisp(svg: string): string {
+  return !svg.trim() || CRISP_OPEN.test(svg) ? svg : `<g shape-rendering="crispEdges">${svg}</g>`
+}
+
+export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palette: Palette, sceneId: string, x: Extras = {}): string {
   const l = lane(pack, c, m, now, sceneId)
   const { act, walking, busy, dir, scene } = l
   const id = lookOf(pack, x.identity)
@@ -150,7 +159,7 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Pal
   const isNapping = l.posture === 'loaf'
   const gauge = typeof x.ctx === 'number' ? pack.gauge(x.ctx) : null
   const target = busy && act?.target
-    ? `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${act.target.svg(ctx)}</svg>`
+    ? `<svg x="${pct(m.to)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${crisp(act.target.svg(ctx))}</svg>`
     : ''
   // A stage is in the lane's own frame, where pct() resolves against the lane.
   const stage = busy && act?.stage
@@ -160,6 +169,14 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Pal
   // A layer with nothing for the desktop (a terminal-only one) adds nothing.
   const overSvg = act?.over ? act.over.svg(ctx) : ''
   const over = overSvg ? `<g transform="translate(0 ${HAT_PAD * PX})">${overSvg}</g>` : ''
+
+  // The activity's own track for the body, as one keyframed move over the leg
+  // that lets go when the leg ends.
+  const keys = busy && act?.arc?.length ? trackKeys(act.arc, m.dur) : null
+  const arc = keys
+    ? `<animateTransform attributeName="transform" type="translate" values="${keys.map(([, dx, dy]) => `${dir * dx * PX} ${dy * PX}`).join(';')}" keyTimes="${keys.map(([k]) => Number(k.toFixed(4))).join(';')}" dur="${Math.round(m.dur)}ms" begin="${at(0)}"/>`
+    : ''
+  const lifted = `<g transform="translate(0 ${-HAT_PAD * PX})"><g>${bounce}${body}${over}</g></g>`
 
   // In bed: shifted onto it and lifted, after a little hop up.
   let bedOpen = '<g><g><g>'
@@ -174,7 +191,7 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Pal
   }
 
   // color-scheme lets the frame follow the app's light or dark appearance,
-  // so a clear lane stays see-through instead of a white page.
+  // so a lane with no backdrop stays see-through instead of a white page.
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${LANE_H}" overflow="visible" style="background:transparent">
   <style>:root{color-scheme:light dark;background:transparent}</style>
   ${scene.backdrop(x.hour ?? 12)}
@@ -185,7 +202,7 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Pal
     ${bedOpen}
     <g shape-rendering="crispEdges">
       ${act?.draw?.svg(ctx) ?? ''}
-      <g transform="translate(0 ${-HAT_PAD * PX})"><g>${bounce}${body}${over}</g></g>
+      ${arc ? `<g>${arc}${lifted}</g>` : lifted}
     </g>
     ${floatX ? '' : floaters(c, isNapping)}
     ${id.shiny ? SHINY : ''}

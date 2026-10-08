@@ -1,10 +1,10 @@
-import type { Cat, Motion } from '../../types'
+import type { HeroState, Motion } from '../../types'
 import type { CellsCtx, Pack, Palette, Rows } from '../packs/types'
 import { faceRight } from './draw'
 import { HAT_PAD, HERO_COLS, LANE_PIX, LANE_ROWS, TERMINAL_DEFAULT } from './geometry'
 import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
 import type { Extras, Lane } from './lane'
-import { posAt } from './motion'
+import { posAt, trackAt } from './motion'
 
 // ── Terminal: the lane is one Raster, repainted in place ────────────────
 
@@ -26,7 +26,7 @@ function ascii(s: string): string {
   return s.replace(/…/g, '...').replace(/♥/g, '<3').replace(/[^\x20-\x7e]/g, '')
 }
 
-function terminalLine(c: Cat, now: number): string | null {
+function terminalLine(c: HeroState, now: number): string | null {
   if (!c.say) return null
   let line = ascii(c.say)
   if (line.length > 28) line = line.slice(0, 25) + '...'
@@ -39,7 +39,7 @@ function terminalLine(c: Cat, now: number): string | null {
 }
 
 // The hero's sprite this frame, facing left, before it's dressed.
-function heroRows(pack: Pack, c: Cat, l: Lane, now: number): Rows {
+function heroRows(pack: Pack, c: HeroState, l: Lane, now: number): Rows {
   const { hero } = pack
   if (l.posture === 'loaf') return hero.loaf
   let rows: Rows
@@ -54,7 +54,7 @@ function heroRows(pack: Pack, c: Cat, l: Lane, now: number): Rows {
   return isHappy(c.mood) || now % 4000 > 3850 ? hero.closeEyes(rows) : rows
 }
 
-export function laneCells(pack: Pack, c: Cat, m: Motion, now: number, palette: Palette, cols: number, sceneId: string, x: Extras = {}): string {
+export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, palette: Palette, cols: number, sceneId: string, x: Extras = {}): string {
   const l = lane(pack, c, m, now, sceneId)
   const { act, walking, busy, dir, scene } = l
   const bg = scene.bg
@@ -116,11 +116,19 @@ export function laneCells(pack: Pack, c: Cat, m: Motion, now: number, palette: P
     act.target?.cells(at(Math.round(m.to * span)))
     act.draw?.cells(at(cx))
   }
+  // The body follows the activity's track, if it has one; the bubble stays put.
+  let hx = cx
+  let hy = cy
+  if (busy && act?.arc?.length) {
+    const [dx, dy] = trackAt(act.arc, elapsed)
+    hx = Math.max(0, Math.min(span, cx + dir * Math.round(dx)))
+    hy = cy + Math.round(dy)
+  }
   const id = lookOf(pack, x.identity)
   const dressed = pack.hero.dress(heroRows(pack, c, l, now), id.marking, x.hat ?? 'none')
-  plot(face(dressed), cx, cy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
-  // Over the hero, moving with its hops.
-  if (busy && act?.over) act.over.cells(at(cx, (rows, x0, y0, pal) => plot(rows, x0, y0 + cy, pal)))
+  plot(face(dressed), hx, hy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
+  // Over the hero, moving with its hops and track.
+  if (busy && act?.over) act.over.cells(at(hx, (rows, x0, y0, pal) => plot(rows, x0, y0 + hy, pal)))
 
   const grid = new Uint32Array(cols * LANE_ROWS * 3)
   for (let y = 0; y < LANE_ROWS; y++) {

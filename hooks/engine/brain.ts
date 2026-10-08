@@ -39,9 +39,12 @@ function destination(move: Exclude<Move, { stay: unknown }> | undefined, from: n
 export function planLeg(pack: Pack, now: number, mood: Mood, from: number, activity: string, speed: Speed, chain?: number): { leg: Motion; dir?: Dir } {
   const a = activityOf(pack, activity)
   const move = a?.move
+  // Whether it lands, on any leg: rolled last, so an activity without a hit
+  // chance draws no extra dice.
+  const landed = () => (a?.hit === undefined ? undefined : Math.random() < a.hit)
   if (move && 'stay' in move) {
     const dur = typeof move.stay === 'number' ? move.stay : roll(move.stay)
-    const hit = a?.hit === undefined ? undefined : Math.random() < a.hit
+    const hit = landed()
     return { leg: { from, to: from, t0: now, dur, activity, hit }, dir: move.faceRoom ? (from < 0.5 ? 1 : -1) : undefined }
   }
   const base = mood === 'working' ? RUN_PACE[speed] : mood === 'tired' ? TIRED_PACE : PACE[speed]
@@ -50,7 +53,9 @@ export function planLeg(pack: Pack, now: number, mood: Mood, from: number, activ
   const dest = destination(move, from)
   const to = hasCompanion(a) ? Math.max(0.12, Math.min(0.95, dest)) : clamp01(dest)
   const dur = Math.max(800, (Math.abs(to - from) / pace) * 1000)
-  return { leg: { from, to, t0: now, dur, activity, chain }, dir: to > from ? 1 : -1 }
+  const hit = landed()
+  const leg: Motion = hit === undefined ? { from, to, t0: now, dur, activity, chain } : { from, to, t0: now, dur, activity, chain, hit }
+  return { leg, dir: to > from ? 1 : -1 }
 }
 
 type Column = 'day' | 'night' | 'tired'

@@ -1,8 +1,9 @@
 export type Mood = 'idle' | 'sit' | 'working' | 'done' | 'oops' | 'sleep' | 'tired' | 'pet'
 
-export type Cat = {
+/** The hero's state, whichever pack draws it. */
+export type HeroState = {
   mood: Mood
-  /** which way the cat last faced: 1 right, -1 left */
+  /** which way the hero last faced: 1 right, -1 left */
   dir: 1 | -1
   say: string | null
   /** when the current line started, in ms, for the typewriter reveal */
@@ -13,10 +14,13 @@ export type Cat = {
   prop?: ToolProp | null
 }
 
+/** The name it had before packs; still the state's key ('cat') and the tests' name for it. */
+export type Cat = HeroState
+
 export type ToolProp = 'read' | 'edit' | 'bash' | 'search'
 
 /**
- * One leg of the cat's walk: from one spot to another (0 = left end of the
+ * One leg of the hero's walk: from one spot to another (0 = left end of the
  * lane, 1 = right end), starting at t0 and taking dur ms; from === to is a
  * pause. Both surfaces interpolate it, so the hooks write it once per leg.
  */
@@ -29,7 +33,7 @@ export type Motion = {
   activity?: Activity
   /** a repeating activity: how many more legs of it follow this one */
   chain?: number
-  /** whether this leg ends in a catch (an activity with a hit chance: the cat's fishing) */
+  /** whether this leg ends in a hit: rolled from the activity's `hit` chance, on any leg */
   hit?: boolean
 }
 
@@ -56,7 +60,7 @@ export type Scene = string
 export type Hat = string
 export type Marking = string
 
-/** Rolled once per install and kept: what makes this cat yours. */
+/** Rolled once per install and kept: what makes this hero yours, in every pack. */
 export type Identity = {
   marking: Marking
   shiny: boolean
@@ -69,7 +73,7 @@ export type Stats = {
 }
 
 export type Prefs = {
-  /** absent in prefs saved before packs: loads as the cat */
+  /** absent in prefs saved before packs: loads as the 'cat' pack */
   pack: PackId
   coat: Coat
   speed: Speed
@@ -82,7 +86,8 @@ export type Prefs = {
 declare module 'claude-code' {
   interface PluginState {
     'pixel-cat': {
-      cat: Cat
+      /** the hero's state; the key keeps its old name so nothing saved or hooked moves */
+      cat: HeroState
       motion: Motion
       limits: Limits
       isHidden: boolean
