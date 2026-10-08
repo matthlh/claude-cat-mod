@@ -83,6 +83,12 @@ type Ctx = {
   phase: Phase
   /** left-facing rows turned the way the hero faces */
   face(rows: Rows): Rows
+  /**
+   * The slots of the followers drawn and still at work (Pack.crew), nearest
+   * first: those an activity's join brings in, for a drawing that answers
+   * each of them (a hit for each, say). Absent or empty: none.
+   */
+  crew?: readonly number[]
 }
 
 /**
@@ -161,6 +167,8 @@ export type Crew = {
   act?: Pose
   /** the happy hop as its agent finishes, before the poof (default the idle pose's first frame) */
   cheer?: Rows
+  /** on the spot while the hero sleeps in its bed, on the ground even for a flyer (default the idle pose, as it is) */
+  rest?: Pose
   /** colours by slot: the follower in slot n wears coats[n % coats.length] */
   coats: [Palette, ...Palette[]]
   /** fly instead of walk: hover `height` sprite px above the ground, bobbing `bob` px (default 1) */
@@ -171,7 +179,17 @@ export type Crew = {
   lag?: number
   /** the puff it comes and goes in, frames in turn over 400 ms (default the engine's own) */
   poof?: { frames: [Rows, ...Rows[]]; pal: Palette }
+  /**
+   * Different followers by slot: the one in slot n is drawn with
+   * kinds[n % kinds.length] laid over this crew's own art, so each keeps its
+   * kind as long as it keeps its slot. Leave `flying` off the crew itself
+   * when only some kinds fly. Absent: every follower is the same but for its coat.
+   */
+  kinds?: CrewKind[]
 }
+
+/** One kind of follower (Crew.kinds): whatever it sets replaces the crew's own. The line's spacing and lag stay the crew's. */
+export type CrewKind = Partial<Omit<Crew, 'kinds' | 'gap' | 'lag'>>
 
 /**
  * How the followers join in with an activity's leg: a lunge at a foe, timed
@@ -188,6 +206,12 @@ export type CrewJoin = {
   keys?: [number, number, number][]
   /** ms each follower starts after the one ahead of it, a ripple down the line (default 0) */
   stagger?: number
+  /**
+   * dx counts from the nearest follower's place: those further back go
+   * further, in the same time, so every one of them reaches the same spot
+   * (a foe ahead of the hero). Default: each moves dx from its own place.
+   */
+  together?: boolean
   /** join in only on legs this says yes to: a strike that lands, say */
   only?(leg: Motion): boolean
 }

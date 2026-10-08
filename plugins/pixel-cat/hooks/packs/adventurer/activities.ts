@@ -1,15 +1,17 @@
 import type { Motion, Phase } from '../../../types'
 import { cycleFrames, faceRight, posePeriod, rects } from '../../engine/draw'
 import { HERO_COLS, PX } from '../../engine/geometry'
+import { CREW_MAX, lunge } from '../../engine/crew'
 import { appear, fallOver, GROUND, layers, perLeg, popTo, track } from '../../engine/track'
-import type { Key, Sprite, TrackDraw } from '../../engine/track'
+import type { Key, Pop, Sprite, TrackDraw } from '../../engine/track'
 import type { Activity, CellsCtx, Palette, Pose, Rows, SvgCtx } from '../types'
 import {
-  AXE, AXE_DOWN, AXE_HIGH, BOOK, BOW, BOW_ARC, BUNNY_A, BUNNY_B, CHEER, CHAIR, COIN_A, COIN_B, GRIPS, HAMMER, HAMMER_DOWN, HANDS,
-  HOLD_A, ITEM_PAL, LANTERN, MOB_PAL, ORE_COPPER, ORE_GOLD, ORE_IRON, PICKAXE, PICKAXE_DOWN, POOF_1, POOF_2, POOF_3,
-  SIT, SLIME_A, SLIME_B, STONE, SWING_A, SWING_B, SWORD, SWORD_DOWN, TOOL_PAL, TORCH_A, TORCH_B, WOOD, WOOD_SWORD,
-  ZOMBIE_A, ZOMBIE_B, ZOMBIE_HIT, ARROW,
+  AXE, AXE_DOWN, AXE_HIGH, BOOK, BOW, BOW_ARC, BUNNY_A, BUNNY_B, CHEER, CHAIR, COIN_A, COIN_B, DAMAGE_PAL, damageRows, FX_PAL, GRIPS,
+  HAMMER, HAMMER_DOWN, HANDS, HOLD_A, ITEM_PAL, LANTERN, MOB_PAL, ORE_COPPER, ORE_GOLD, ORE_IRON, PICKAXE, PICKAXE_DOWN, POOF_1,
+  POOF_2, POOF_3, SIT, SLIME_A, SLIME_B, SPARKLE_1, SPARKLE_2, SPARKLE_3, STONE, SWING_A, SWING_B, SWORD, SWORD_DOWN, TOOL_PAL,
+  TORCH_A, TORCH_B, WOOD, WOOD_SWORD, ZOMBIE_A, ZOMBIE_B, ZOMBIE_HIT, ARROW,
 } from './sprites'
+import { SUMMON_GAP } from './summons'
 import {
   ANVIL, BLOCK_DIRT, BLOCK_GRASS, BLOCK_STONE, BLOCK_WOOD, CRACKS, FURNACE_A, FURNACE_B, LOG, ORE_BLOCK_COPPER,
   ORE_BLOCK_GOLD, ORE_BLOCK_IRON, STUMP, TREE, WORKBENCH, WORLD_PAL,
@@ -128,6 +130,25 @@ const SPARK_B = ['X.X', '.W.', 'X.X']
 const SPARK_OFF = ['...']
 const SPARK_PAL: Palette = { X: 0xffd45c, W: 0xffffff }
 
+// A drop that glints as it flies into the hero: popTo, with a sparkle
+// twinkling at its top corner all the way in, on top of it.
+const SPARKLE = [SPARKLE_1, SPARKLE_2, SPARKLE_3, SPARKLE_2]
+const SPARKLE_W = width(SPARKLE_1)
+function glinting(p: Pop): TrackDraw[] {
+  const first = (typeof p.frames[0] === 'string' ? (p.frames as Rows) : (p.frames as Rows[])[0]) ?? []
+  const w = width(first)
+  const h = first.length
+  const [ox, oy] = [w - 2, -2]
+  const top = p.y ?? GROUND - h
+  const into: [number, number] = [
+    Math.floor((HERO_COLS - w) / 2) + (p.into?.[0] ?? 0) + ox - Math.floor((HERO_COLS - SPARKLE_W) / 2),
+    (p.into?.[1] ?? Math.floor((GROUND - h) / 2)) + oy,
+  ]
+  // A 'hero' anchor centres each sprite on its own width; 'ahead' and 'target' do not.
+  const centred = p.anchor === 'hero' ? Math.floor((HERO_COLS - w) / 2) - Math.floor((HERO_COLS - SPARKLE_W) / 2) : 0
+  return [popTo(p), popTo({ ...p, frames: SPARKLE, pal: FX_PAL, tick: 110, x: (p.x ?? 0) + ox + centred, y: top + oy, into })]
+}
+
 // Bounces along keys: a hop every `every` of the leg, `high` rows up.
 function hops(t0: number, t1: number, dx0: number, dx1: number, n: number, high: number, fade?: [number, number]): Key[] {
   const out: Key[] = []
@@ -159,7 +180,7 @@ KINDS.forEach(([block, drop], k) => {
     mineTracks.push(track({ frames: rows, pal: WORLD_PAL, x, y, show: [0, BREAK], only }))
   })
   // A low arc, so it stays under the terminal's top row.
-  mineTracks.push(popTo({ frames: drop, pal: ITEM_PAL, x: 2, y: GROUND - 6, from: BREAK, at: 0.85, span: 0.12, peak: 3, only }))
+  mineTracks.push(...glinting({ frames: drop, pal: ITEM_PAL, x: 2, y: GROUND - 6, from: BREAK, at: 0.85, span: 0.12, peak: 3, only }))
 })
 // Cracks spread over every block of the cluster as it is struck.
 CRACKS.forEach((crack, s) => {
@@ -180,8 +201,8 @@ const timberTracks: TrackDraw[] = [
   track({ frames: STUMP, pal: WORLD_PAL, gap: 0, x: 1, keys: [[0.8, 0, 0, 1], [1, 0, 0, 0]] }),
   fallOver({ rows: TREE, fallen: LOG, pal: WORLD_PAL, ...TREE_AT, from: 0.05, to: 0.3, show: [0, 0.5] }),
   poof(0.5, 0.64, { gap: 0, x: 8, y: GROUND - POOF_1.length }),
-  popTo({ frames: WOOD, pal: ITEM_PAL, gap: 0, x: 6, from: 0.5, at: 0.55, span: 0.13 }),
-  popTo({ frames: WOOD, pal: ITEM_PAL, gap: 0, x: 11, from: 0.5, at: 0.66, span: 0.14 }),
+  ...glinting({ frames: WOOD, pal: ITEM_PAL, gap: 0, x: 6, from: 0.5, at: 0.55, span: 0.13 }),
+  ...glinting({ frames: WOOD, pal: ITEM_PAL, gap: 0, x: 11, from: 0.5, at: 0.66, span: 0.14 }),
 ]
 
 // ── Building ────────────────────────────────────────────────────────────
@@ -241,7 +262,7 @@ function station(frames: Rows[], anchor: 'ahead' | 'target', made?: Made): Track
     // Over the station, but never above the terminal's top row, and a flat
     // hop into the hero for the same reason.
     const y = Math.max(0, GROUND - h - made.rows.length - 1)
-    out.push(popTo({ frames: made.rows, pal: made.pal, ...place, x: Math.floor((w - width(made.rows)) / 2), y, from: 0.72, at: 0.86, span: 0.12, peak: 1 }))
+    out.push(...glinting({ frames: made.rows, pal: made.pal, ...place, x: Math.floor((w - width(made.rows)) / 2), y, from: 0.72, at: 0.86, span: 0.12, peak: 1 }))
   }
   return out
 }
@@ -301,16 +322,19 @@ function approach(foe: Foe, gap: number): TrackDraw {
 function struck(foe: Foe, gap: number, hits: [number, number], end: number): TrackDraw[] {
   const [h1, h2] = hits
   const w = width(foe.walk[0] ?? [])
-  const flash = 0.1
+  const flash = FLASH
   return [
     track({ frames: foe.walk, pal: foe.pal, tick: foe.tick, gap, show: [0, h1] }),
     track({ frames: foe.hit, pal: foe.hitPal, gap, show: [h1, h1 + flash], keys: [[h1, 0, 0], [h1 + flash, 2, 0]] }),
     track({ frames: foe.walk, pal: foe.pal, tick: foe.tick, gap, x: 2, show: [h1 + flash, h2] }),
     track({ frames: foe.hit, pal: foe.hitPal, gap, show: [h2, h2 + flash], keys: [[h2, 2, 0], [h2 + flash, 5, -1]] }),
     poof(h2 + flash, end, { gap, x: 5 + Math.floor((w - POOF_W) / 2), y: GROUND - 7 }),
-    popTo({ frames: [COIN_A, COIN_B], pal: ITEM_PAL, tick: 140, gap, x: 5 + Math.floor((w - 5) / 2), from: h2 + flash + 0.1, at: end, span: 0.14, peak: 3 }),
+    ...glinting({ frames: [COIN_A, COIN_B], pal: ITEM_PAL, tick: 140, gap, x: 5 + Math.floor((w - 5) / 2), from: h2 + flash + 0.1, at: end, span: 0.14, peak: 3 }),
   ]
 }
+// Where the foe stands at `t` of a fight struck at `hits`, in px forward of its place.
+const FLASH = 0.1
+const foeX = (hits: [number, number], t: number) => (t < hits[0] + FLASH ? 0 : t < hits[1] + FLASH ? 2 : 5)
 // Each foe's drawings for one kind of fight, built up front.
 const perFoe = <T>(f: (foe: Foe) => T): Record<FoeId, T> => ({ slime: f(FOES.slime), zombie: f(FOES.zombie) })
 const APPROACH = { sword: perFoe(foe => approach(foe, SWORD_GAP)), bow: perFoe(foe => approach(foe, BOW_GAP)) }
@@ -328,6 +352,85 @@ const arrowX = HERO_COLS - gripAt('BOW', 'ARROW')[0] - width(ARROW)
 const arrowFlight = HERO_COLS + BOW_GAP - (arrowX + width(ARROW))
 const arrow = (from: number, to: number, extra: number) =>
   held('BOW', ['ARROW'], { show: [from, to], linger: false, keys: [[from, 0, 0], [to, arrowFlight + extra, 0]] })
+
+// ── Summons and damage numbers ──────────────────────────────────────────
+
+// The minions (Pack.crew, summons.ts) dash in at the foe between the hero's
+// two blows, each in its attack frame, a ripple down the line, and back. The
+// whole line reaches the same spot, the foe's front once the first blow has
+// knocked it back; the nearest minion goes this far, from its own place
+// behind the hero to a pixel into the foe.
+export const SUMMON_STAGGER = 100
+const reachFor = (gap: number) => HERO_COLS + gap + 2 + 1 + SUMMON_GAP
+type Fight = { gap: number; hits: [number, number]; peak: number }
+export const FIGHTS = {
+  strike: { gap: SWORD_GAP, hits: STRIKE_HITS, peak: 0.38 },
+  shoot: { gap: BOW_GAP, hits: SHOOT_HITS, peak: 0.44 },
+} satisfies Record<string, Fight>
+const summonsJoin = (f: Fight) => lunge(f.peak, reachFor(f.gap), { span: 0.14, rise: 1, stagger: SUMMON_STAGGER, together: true })
+
+// A number floats up off the foe on every hit, the hero's and each minion's,
+// and fades: gold for the hero (red, and double, for a critical), white for
+// a minion. Rolled from the leg's start, so both surfaces show the same. The
+// desktop has headroom for it to rise into, over the foe's head; the 10-row
+// terminal has none, so there it is the bare digits on the top rows, shown
+// for the same moment.
+const NUMBER_SPAN = 0.2
+type Tone = keyof typeof DAMAGE_PAL
+// `slot` is the minion's, or -1 for the hero's own blow.
+type Hit = { t: number; value: number; tone: Tone; slot: number }
+function hitsOf(f: Fight, leg: Motion, slots: readonly number[]): Hit[] {
+  const out: Hit[] = f.hits.map((t, i) => {
+    const value = 7 + hashPick(leg.t0 + 0.37 * (i + 1), 12)
+    return hashPick(leg.t0 + 1.3 * (i + 1), 5) === 0 ? { t, value: value * 2, tone: 'red', slot: -1 } : { t, value, tone: 'yellow', slot: -1 }
+  })
+  const dur = Math.max(1, leg.dur)
+  for (const slot of slots) out.push({ t: f.peak + (SUMMON_STAGGER * slot) / dur, value: 3 + hashPick(leg.t0 + 0.11 * (slot + 3), 7), tone: 'white', slot })
+  return out
+}
+// The digits alone, without the outline or the blank rows round it.
+const bare = (rows: Rows) => rows.slice(1, -1).map(r => r.slice(1, -1).replace(/k/g, '.'))
+// The hero's number is centred over the foe. The minions' go beyond it, on
+// the far side from the hero, so a ripple of hits stays readable and never
+// runs together with the hero's into one number: on the desktop two columns
+// of them, every other pair lower; on the terminal, with no rows to spare,
+// one row of them side by side. [x, y] of the number's left edge and top,
+// for a number `w` wide whose widest (the hero's two digits) is `widest`.
+function numberPlace(slot: number, foeW: number, w: number, widest: number, columns: number, step: number): [number, number] {
+  const centred = (n: number) => Math.floor((foeW - n) / 2)
+  if (slot < 0) return [centred(w), 0]
+  return [centred(widest) + widest + 2 + (slot % columns) * step, Math.floor(slot / columns) % 2 ? 3 : 0]
+}
+// One number's drawing, made once for each place, moment and value it is
+// ever drawn at (a fight's are a handful), and kept.
+const NUMBERS = new Map<string, TrackDraw>()
+const WIDEST = width(damageRows(88))
+function numberAt(f: Fight, foeW: number, hit: Hit): TrackDraw {
+  const t = Math.round(hit.t * 1e4) / 1e4
+  const key = `${f.gap}|${foeW}|${t}|${hit.value}|${hit.tone}|${hit.slot}`
+  let d = NUMBERS.get(key)
+  if (!d) {
+    const rows = damageRows(hit.value)
+    const digits = bare(rows)
+    const knocked = foeX(f.hits, t)
+    const end = t + NUMBER_SPAN
+    const place = { pal: DAMAGE_PAL[hit.tone], gap: f.gap, layer: 'over' as const, mirror: false, show: [t, end] as [number, number] }
+    const [x, y] = numberPlace(hit.slot, foeW, width(rows), WIDEST, 2, 6)
+    const desk = track({ ...place, frames: rows, x: knocked + x, y: y - 1, keys: [[t, 0, 1, 1], [t + NUMBER_SPAN * 0.5, 0, -2, 1], [end, 0, -3, 0]] })
+    // The terminal's digits are 2 px narrower and shorter: on the top row.
+    const [tx] = numberPlace(hit.slot, foeW, width(digits), WIDEST - 2, CREW_MAX, 5)
+    const term = track({ ...place, frames: digits, x: knocked + tx, y: 0 })
+    d = { layer: 'over', svg: desk.svg, cells: term.cells }
+    if (NUMBERS.size > 400) NUMBERS.clear()
+    NUMBERS.set(key, d)
+  }
+  return d
+}
+const damageNumbers = (f: Fight) =>
+  perLeg('over', ctx => {
+    const foeW = width(FOES[foeOf(ctx)].walk[0] ?? [])
+    return hitsOf(f, ctx.leg, ctx.crew ?? []).map(hit => numberAt(f, foeW, hit))
+  })
 
 // ── Bunnies ─────────────────────────────────────────────────────────────
 
@@ -433,7 +536,8 @@ export const ACTIVITIES: Record<string, Activity> = {
     move: { stay: 2400 },
     pose: swordSwing.pose,
     cues: [[600, 'hyah!'], [2000, '+1 coin']],
-    ...layers(perLeg('draw', ctx => STRIKE[foeOf(ctx)]), swordSwing.tool, perLeg('over', ctx => STRIKE[foeOf(ctx)])),
+    crew: summonsJoin(FIGHTS.strike),
+    ...layers(perLeg('draw', ctx => STRIKE[foeOf(ctx)]), swordSwing.tool, perLeg('over', ctx => STRIKE[foeOf(ctx)]), damageNumbers(FIGHTS.strike)),
   },
   shoot: {
     move: { stay: 2600 },
@@ -445,7 +549,9 @@ export const ACTIVITIES: Record<string, Activity> = {
       arrow(0.12, 0.3, 0),
       arrow(0.44, 0.6, 2),
       perLeg('over', ctx => SHOOT[foeOf(ctx)]),
+      damageNumbers(FIGHTS.shoot),
     ),
+    crew: summonsJoin(FIGHTS.shoot),
   },
 
   // A bunny hops along ahead, and the hero tags along.

@@ -48,6 +48,11 @@ export function workingCount(crew: readonly Follower[] | undefined): number {
   return (crew ?? []).filter(f => f.leavingAt === undefined).length
 }
 
+/** The slots of the followers drawn (the first `cap`) and still at work, nearest first: Ctx.crew. */
+export function joiningSlots(crew: readonly Follower[] | undefined, cap: number): number[] {
+  return (crew ?? []).filter(f => f.slot < cap && f.leavingAt === undefined).map(f => f.slot).sort((a, b) => a - b)
+}
+
 /** How many followers a terminal lane `cols` wide draws. */
 export function terminalCap(cols: number): number {
   return Math.max(0, Math.min(CREW_MAX, Math.floor(cols / COLS_PER_FOLLOWER)))
@@ -104,7 +109,7 @@ export function muster(crew: readonly Follower[], agents: readonly { id: string;
  * `span` of the leg (default 0.16). `rise` lifts them that many px at the
  * peak; a negative one dives, for flyers.
  */
-export function lunge(at: number, reach: number, o: { span?: number; rise?: number; stagger?: number; only?(leg: Motion): boolean } = {}): CrewJoin {
+export function lunge(at: number, reach: number, o: { span?: number; rise?: number; stagger?: number; together?: boolean; only?(leg: Motion): boolean } = {}): CrewJoin {
   const span = o.span ?? 0.16
   const a = clamp01(at - span / 2)
   const b = Math.max(a + 0.001, clamp01(at + span / 2))
@@ -112,6 +117,7 @@ export function lunge(at: number, reach: number, o: { span?: number; rise?: numb
   const join: CrewJoin = { during: [a, b], keys: [[0, 0, 0], [peak, reach, -(o.rise ?? 0)], [1, 0, 0]] }
   if (o.stagger !== undefined) join.stagger = o.stagger
   if (o.only) join.only = o.only
+  if (o.together) join.together = true
   return join
 }
 
@@ -119,9 +125,28 @@ export function lunge(at: number, reach: number, o: { span?: number; rise?: numb
 
 const widthOf = (rows: Rows) => rows.reduce((w, r) => Math.max(w, r.length), 0)
 
-/** Every sprite a crew draws, for its size. */
+/** Every sprite one kind of follower draws, for its size. */
 export function crewSprites(art: Crew): Rows[] {
-  return [...art.move, ...art.idle.frames, ...(art.act?.frames ?? []), ...(art.cheer ? [art.cheer] : [])]
+  return [...art.move, ...art.idle.frames, ...(art.act?.frames ?? []), ...(art.cheer ? [art.cheer] : []), ...(art.rest?.frames ?? [])]
+}
+
+/**
+ * The art the follower in `slot` is drawn with: its kind (Crew.kinds) laid
+ * over the crew's own. While the hero sleeps (`asleep`), a crew with a rest
+ * pose shows it, on the ground.
+ */
+export function crewArt(art: Crew, slot: number, asleep = false): Crew {
+  const kind = art.kinds?.length ? art.kinds[slot % art.kinds.length] : undefined
+  const a: Crew = kind ? { ...art, ...kind } : art
+  if (!asleep || !a.rest) return a
+  const grounded: Crew = { ...a, idle: a.rest }
+  delete grounded.flying
+  return grounded
+}
+
+/** Every kind of follower a crew has: its kinds laid over it, or itself. */
+export function crewArts(art: Crew): Crew[] {
+  return art.kinds?.length ? art.kinds.map((_, i) => crewArt(art, i)) : [art]
 }
 
 type One = {
@@ -142,7 +167,8 @@ type One = {
   pal: Palette
 }
 
-function one(art: Crew, f: Follower, m: Motion, trail: Trail | undefined, dir: Dir, join: CrewJoin | undefined): One {
+function one(crew: Crew, f: Follower, m: Motion, trail: Trail | undefined, dir: Dir, join: CrewJoin | undefined, asleep = false): One {
+  const art = crewArt(crew, f.slot, asleep)
   const sprites = crewSprites(art)
   return {
     art,
@@ -214,6 +240,13 @@ function joinWindow(o: One): [number, number] | null {
   return b > a ? [st + clamp01(a) * o.m.dur, st + clamp01(b) * o.m.dur] : null
 }
 
+// How far it goes for each px of dx: further back, further, for a join that goes together.
+function reachOf(o: One): number {
+  if (!o.join?.together) return 1
+  const most = Math.max(0, ...(o.join.keys ?? []).map(k => Math.abs(k[1])))
+  return most > 0 ? (most + o.j * (o.fw + o.gap)) / most : 1
+}
+
 // Where the join puts it at `t`: [dx forward, dy down] in sprite px.
 function joinAt(o: One, t: number): [number, number] {
   const w = joinWindow(o)
@@ -226,9 +259,10 @@ function joinAt(o: One, t: number): [number, number] {
   const a = ks[i]
   const b = ks[i + 1]
   if (!a) return [0, 0]
-  if (!b || u <= a[0]) return [a[1], a[2]]
+  const r = reachOf(o)
+  if (!b || u <= a[0]) return [a[1] * r, a[2]]
   const k = (u - a[0]) / Math.max(1e-9, b[0] - a[0])
-  return [a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
+  return [(a[1] + (b[1] - a[1]) * k) * r, a[2] + (b[2] - a[2]) * k]
 }
 
 type State = 'idle' | 'move' | 'act' | 'cheer' | 'gone'
@@ -300,6 +334,8 @@ export type CrewScene = {
   /** the current leg's activity's join, if it has one */
   join: CrewJoin | undefined
   now: number
+  /** the hero is asleep in its bed: followers with a rest pose settle (Crew.rest) */
+  asleep?: boolean
 }
 
 // ── Desktop ─────────────────────────────────────────────────────────────
@@ -325,7 +361,7 @@ export function crewSvg(sc: CrewScene, pct: (p: number) => string, cur: number, 
   const drawn = shown(crew, CREW_MAX, now)
   const more = hiddenCount(crew, CREW_MAX)
   const last = drawn.reduce<Follower | undefined>((a, f) => (!a || f.slot > a.slot ? f : a), undefined)
-  const out = [...drawn].sort((a, b) => b.slot - a.slot).map(f => followerSvg(one(art, f, sc.m, sc.trail, sc.dir, sc.join), now, pct, f === last ? more : 0, labelColor))
+  const out = [...drawn].sort((a, b) => b.slot - a.slot).map(f => followerSvg(one(art, f, sc.m, sc.trail, sc.dir, sc.join, sc.asleep), now, pct, f === last ? more : 0, labelColor))
   if (!last && more) {
     const x = sc.dir === 1 ? -4 : HERO_W + 4
     out.push(`<svg x="${pct(cur)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${label(more, x, HERO_H - 6, sc.dir === 1 ? 'end' : 'start', labelColor)}</svg>`)
@@ -377,7 +413,8 @@ function followerSvg(o: One, now: number, pct: (p: number) => string, more: numb
     const side = sideAt(o, w[0])
     const pts: [number, number, number][] = []
     if (a > 0) pts.push([0, 0, 0])
-    for (const [t, dx, dy] of ks) pts.push([a + (b - a) * clamp01(t), dx * side, dy])
+    const r = reachOf(o)
+    for (const [t, dx, dy] of ks) pts.push([a + (b - a) * clamp01(t), dx * side * r, dy])
     const lastKey = pts[pts.length - 1]
     if (b < 1) {
       if (lastKey && (lastKey[1] !== 0 || lastKey[2] !== 0)) pts.push([b, 0, 0])
@@ -474,20 +511,21 @@ export function crewCells(
   let tag: { x: number; y: number; text: string } | null = null
   let lastSlot = -1
   for (const f of [...drawn].sort((a, b) => b.slot - a.slot)) {
-    const o = one(art, f, sc.m, sc.trail, sc.dir, sc.join)
+    const o = one(art, f, sc.m, sc.trail, sc.dir, sc.join, sc.asleep)
+    const kind = o.art
     const side = sideAt(o, now)
     const state = stateAt(o, now)
     const [jx, jy] = joinAt(o, now)
     const x = Math.round(laneAt(o, now) * span + offAt(o, now) + jx * side)
-    const height = art.flying?.height ?? 0
-    const bob = art.flying && Math.floor(now / 600 + o.j) % 2 ? -(art.flying.bob ?? 1) : 0
+    const height = kind.flying?.height ?? 0
+    const bob = kind.flying && Math.floor(now / 600 + o.j) % 2 ? -(kind.flying.bob ?? 1) : 0
     let hop = 0
     if (state === 'cheer' && f.leavingAt !== undefined) {
       const k = Math.floor(((now - f.leavingAt) / HOP_MS) * 4)
       hop = k === 0 ? -2 : k === 2 ? -1 : 0
     }
     const ground = GROUND - height + bob
-    const puff = art.poof ?? PUFF
+    const puff = kind.poof ?? PUFF
     const puffAt = (from: number) => {
       const i = Math.floor(((now - from) / POOF_MS) * puff.frames.length)
       const rows = puff.frames[i]
@@ -502,10 +540,10 @@ export function crewCells(
     } else {
       const pick = (list: Rows[], tick: number) => list[Math.floor(now / Math.max(1, tick)) % list.length] ?? list[0] ?? []
       const rows =
-        state === 'cheer' ? art.cheer ?? art.idle.frames[0]
-        : state === 'act' ? pick((art.act ?? art.idle).frames, (art.act ?? art.idle).tick ?? 500)
-        : state === 'move' ? pick(art.move, art.stride ?? DEFAULT_STRIDE)
-        : pick(art.idle.frames, art.idle.tick ?? 500)
+        state === 'cheer' ? kind.cheer ?? kind.idle.frames[0]
+        : state === 'act' ? pick((kind.act ?? kind.idle).frames, (kind.act ?? kind.idle).tick ?? 500)
+        : state === 'move' ? pick(kind.move, kind.stride ?? DEFAULT_STRIDE)
+        : pick(kind.idle.frames, kind.idle.tick ?? 500)
       plot(side === 1 ? faceRight(rows) : rows, x, ground - rows.length + hop + Math.round(jy), o.pal)
     }
     if (f.slot > lastSlot && more) {

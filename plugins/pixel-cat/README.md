@@ -56,7 +56,11 @@ Everything the hero is and does comes from a pack. Switch packs from ⚙ → **P
 - **Cat:** everything above.
 - **Adventurer:** mines ore out of blocks as cracks spread across them, chops a tree until it falls, builds a little wall or a staircase block by block, and crafts a chair or a blade at a workbench, furnace or anvil. Zombies shamble in, far more often at night (a slime in the forest by day), and get the sword or, 40% of the time, the bow, with a coin for the trouble. A bunny hops by now and then. While Claude works it reads (Read), hammers at the anvil (edits), works the furnace (shell commands) or searches by lantern or torch. The food bowl becomes a potion that drains as the context fills. Six outfits (Starter, Miner, Mage, Ranger, Knight, Gold), four scenes (Forest, Cavern, Night, Cabin) each with its own bed, and its own hats: a feather, a horned helm, a crown and a wizard hat.
 
-  ![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime, working and asleep](docs/adventurer-preview.svg)
+  ![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime with its summons, working and asleep](docs/adventurer-preview.svg)
+
+## Your agents, on screen
+
+Each background agent you start shows up behind the hero for as long as it works: a kitten trotting after the cat, or a summoned minion following the adventurer (an imp, a slime, a hornet, a spider or a raven, by its place in the line, so each agent keeps its creature). Flyers hover, the rest keep to the ground. They join in, too: kittens pounce with the cat, and summons charge the foe in a fight, with a damage number for every hit. When an agent finishes, its follower hops and vanishes in a puff. Up to five are drawn, then "+N" (the terminal draws one for every 30 columns). Only this session's agents count; a workflow's agents are not counted. `/cat` shows how many are working.
 
   The Adventurer pack is fan-made and inspired by Terraria. It is not affiliated with or endorsed by Re-Logic, and Terraria is a trademark of Re-Logic. All of its pixel art is original.
 

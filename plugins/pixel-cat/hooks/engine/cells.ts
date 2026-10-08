@@ -1,6 +1,6 @@
 import type { HeroState, Motion } from '../../types'
 import type { CellsCtx, Pack, Palette, Rows } from '../packs/types'
-import { crewCells } from './crew'
+import { crewCells, joiningSlots, terminalCap } from './crew'
 import { faceRight } from './draw'
 import { HAT_PAD, HERO_COLS, LANE_PIX, LANE_ROWS, TERMINAL_DEFAULT } from './geometry'
 import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
@@ -109,6 +109,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
   // The brain never plans that; it can show for one repaint between the two
   // state writes at bedtime.
   const hour = hourOf(x.hour ?? 12)
+  const crew = joiningSlots(x.crew, terminalCap(cols))
   const at = (x0: number, put = plot): CellsCtx => ({
     leg: m,
     hero: c,
@@ -122,6 +123,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     ahead: (w, gap = 1) => (dir === 1 ? x0 + HERO_COLS + gap : x0 - w - gap),
     col: p => Math.round(p * span),
     plot: put,
+    crew,
   })
   if (busy && act) {
     act.stage?.cells(at(0))
@@ -129,7 +131,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     act.draw?.cells(at(cx))
   }
   // The followers, beneath the hero as on the desktop.
-  const tag = crewCells({ art: pack.crew, crew: x.crew, m, trail: x.trail, dir, join: act?.crew, now }, cols, span, cx, plot)
+  const tag = crewCells({ art: pack.crew, crew: x.crew, m, trail: x.trail, dir, join: act?.crew, now, asleep: isInBed(c, m) }, cols, span, cx, plot)
   const id = lookOf(pack, x.identity)
   const dressed = wear(pack.hero, heroRows(pack, c, l, now), id.marking, x.hat ?? 'none', l.posture === 'asleep')
   plot(face(dressed), cx, cy - HAT_PAD, { ...palette, ...pack.hero.hatPal })

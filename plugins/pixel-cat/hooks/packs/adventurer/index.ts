@@ -3,6 +3,7 @@ import type { Pack, Palette, Rows } from '../types'
 import { ACTIVITIES } from './activities'
 import { describeLook, HATS, HERO, MARKINGS } from './hero'
 import { OUTFITS } from './sprites'
+import { SUMMONS } from './summons'
 import { ADVENTURER_WORLD } from './world'
 
 // A potion bottle shows how much context is left: full when fresh, drained
@@ -37,6 +38,7 @@ export const adventurer: Pack = {
   defaults: { coat: 'starter', scene: 'forest' },
   activities: ACTIVITIES,
   roles: { stroll: 'walk', rest: 'stand', work: 'busy' },
+  crew: SUMMONS,
   gauge: ctx => ({ rows: potionRows(ctx), pal: POTION_PAL }),
   text: {
     hello: 'ready for adventure!',
