@@ -352,7 +352,7 @@ export const register: Register = on => {
     const secs = Math.round(((await $.clock.now()) - turnStartedAt) / 1000)
     const pack = await activePack($)
     if (e.reason === 'answer') {
-      await wake('done', `done! ${secs}s`, 8000)
+      await wake('done', pack.text.done(secs), 8000)
       for (const h of await bumpStats($, s => ({ ...s, turns: s.turns + 1 }))) {
         await toast($, pack.toasts.hat(h.label))
         await wake('pet', `new hat: ${h.label}!`, 4000)
@@ -361,7 +361,7 @@ export const register: Register = on => {
     } else if (e.reason === 'aborted') {
       await wake('sit', 'ok, stopped', 4000)
     } else {
-      await wake('oops', 'hit an error :(', 6000)
+      await wake('oops', pack.text.oops, 6000)
       await toast($, pack.toasts.failed)
     }
 

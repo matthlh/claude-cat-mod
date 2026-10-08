@@ -1,4 +1,5 @@
 import { RESERVED_ACTIVITIES } from '../engine/motion'
+import { adventurer } from './adventurer/index'
 import { cat } from './cat/index'
 import type { Pack } from './types'
 
@@ -35,7 +36,7 @@ function admit(packs: Pack[]): Record<string, Pack> {
 }
 
 // Every pack, by id. A new pack is one folder and one entry here.
-export const PACKS: Record<string, Pack> = admit([cat])
+export const PACKS: Record<string, Pack> = admit([cat, adventurer])
 
 export const DEFAULT_PACK = cat
 

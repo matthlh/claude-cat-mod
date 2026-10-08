@@ -45,7 +45,9 @@ export function planLeg(pack: Pack, now: number, mood: Mood, from: number, activ
   if (move && 'stay' in move) {
     const dur = typeof move.stay === 'number' ? move.stay : roll(move.stay)
     const hit = landed()
-    return { leg: { from, to: from, t0: now, dur, activity, hit }, dir: move.faceRoom ? (from < 0.5 ? 1 : -1) : undefined }
+    const leg: Motion = { from, to: from, t0: now, dur, activity, hit }
+    if (chain !== undefined) leg.chain = chain
+    return { leg, dir: move.faceRoom ? (from < 0.5 ? 1 : -1) : undefined }
   }
   const base = mood === 'working' ? RUN_PACE[speed] : mood === 'tired' ? TIRED_PACE : PACE[speed]
   const pace = mood === 'working' ? base : base * (a?.pace ?? 1)

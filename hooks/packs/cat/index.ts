@@ -44,6 +44,8 @@ export const cat: Pack = {
     shown: 'Cat is back 🐱',
     hidden: 'Cat hidden (run /cat again to bring it back).',
     look: id => (id.marking === 'none' ? 'plain coat' : `${id.marking} marking`),
+    done: secs => `done! ${secs}s`,
+    oops: 'hit an error :(',
   },
   toasts: {
     hat: label => `🎩 Your cat unlocked a hat: ${label}! Wear it from ⚙ → Hat`,

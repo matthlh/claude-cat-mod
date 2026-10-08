@@ -225,6 +225,10 @@ export type Pack = {
     shown: string
     hidden: string
     look(id: Identity): string
+    /** a turn finished after `secs` seconds */
+    done(secs: number): string
+    /** a turn ended on an error */
+    oops: string
   }
   toasts: {
     hat(label: string): string

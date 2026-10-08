@@ -1,6 +1,6 @@
 # Claude Cat Mod 🐱
 
-A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/claude-code) prompt. It wanders around, watches your usage limits, and tells you when Claude finishes.
+A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/claude-code) prompt. It wanders around, watches your usage limits, and tells you when Claude finishes. Not a cat person? Switch packs and an adventurer mines, chops trees and fights zombies there instead.
 
 ![Claude cat poses: walk, walk 2, sit, happy, sleep](docs/preview.svg)
 
@@ -48,6 +48,15 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
 - **`/cat`** toggles it and prints your current limits and when the 5-hour window resets.
 
 In the Claude desktop app the whole lane is one SVG that animates itself (smooth gliding, leg and tail frames, blinks, floating hearts and z's), so the mod only redraws when the cat changes what it's doing. In the terminal the lane is a cell grid of colored half blocks, repainted in place 10 times a second.
+
+## Packs
+
+Everything the hero is and does comes from a pack. Switch packs from ⚙ → **Pack**; your coat, scene and hat carry over wherever the new pack has them.
+
+- **Cat:** everything above.
+- **Adventurer:** mines ore out of blocks as cracks spread across them, chops a tree until it falls, builds a little wall or a staircase block by block, and crafts a chair or a blade at a workbench, furnace or anvil. Zombies shamble in, far more often at night (a slime in the forest by day), and get the sword or, 40% of the time, the bow, with a coin for the trouble. A bunny hops by now and then. While Claude works it reads (Read), hammers at the anvil (edits), works the furnace (shell commands) or searches by lantern or torch. The food bowl becomes a potion that drains as the context fills. Six outfits (Starter, Miner, Mage, Ranger, Knight, Gold), four scenes (Forest, Cavern, Night, Cabin) each with its own bed, and its own hats: a feather, a horned helm, a crown and a wizard hat.
+
+  ![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime, working and asleep](docs/adventurer-preview.svg)
 
 ## Install
 
@@ -123,3 +132,17 @@ claude plugin test ~/.claude/mods/pixel-cat
 ```
 
 The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity of every pack and the bed in every scene, so a drawing the engine would refuse fails there instead of silently disappearing. They also follow every activity's `then` and fail on one that leads nowhere, since a typo there would otherwise become a plain wander.
+
+### Make your own pack
+
+1. Copy [`hooks/packs/adventurer/`](hooks/packs/adventurer) to `hooks/packs/<yours>/` and give the pack in its `index.ts` a new `id`, `label` and `noun`.
+2. Redraw the sprites, outfits and scenes, and change the activities. Each activity is drawn with the track helper in [`hooks/engine/track.ts`](hooks/engine/track.ts): a sprite, where it sits and how it moves over the leg, drawn the same on both surfaces.
+3. Register it in [`hooks/packs/index.ts`](hooks/packs/index.ts): import it and add it to `admit([cat, adventurer, yours])`.
+4. Check it:
+
+   ```bash
+   claude plugin validate ~/.claude/mods/pixel-cat
+   claude plugin test ~/.claude/mods/pixel-cat
+   ```
+
+The tests pick up every registered pack on their own: each activity is drawn in every scene, through its whole leg, on both surfaces, and every desktop frame has to stay under the 131,072-character limit.
