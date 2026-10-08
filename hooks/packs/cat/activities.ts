@@ -116,7 +116,7 @@ export const ACTIVITIES: Record<string, Activity> = {
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;${k};${(1 - Number(k)).toFixed(3)};1" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>
       ${rects(spot.rows, SPOT_PAL)}${fish}</g>${hit}</g>`
       },
-      cells: ({ leg: m, now, dir, scene, x, ahead, plot }) => {
+      cells: ({ leg: m, now, scene, ahead, plot }) => {
         const elapsed = now - m.t0
         if (elapsed <= 300 || elapsed >= m.dur - 300) return
         const spot = SPOTS[scene]
@@ -132,12 +132,23 @@ export const ACTIVITIES: Record<string, Activity> = {
           const phase = now % 2500
           if (phase < 900) plot(FISH, px + Math.floor(w / 2) - 3 + Math.floor(phase / 300), LANE_PIX - 3 - Math.round(Math.sin((Math.PI * phase) / 900) * 5), TOYS)
         }
+      },
+    },
+    // The catch leaps onto the cat's face, so on the terminal it is drawn
+    // over the cat. The desktop's catch stays in `draw`, timed by SMIL, so
+    // this layer draws nothing there.
+    over: {
+      svg: () => '',
+      cells: ({ leg: m, now, dir, scene, x, ahead, plot }) => {
+        const elapsed = now - m.t0
         const k = (elapsed - (m.dur - 1200)) / 900
-        if (m.hit && k >= 0 && k < 1) {
-          const sx = px + Math.floor(w / 2)
-          const ex = dir === 1 ? x + 9 : x + 1
-          plot(FISH, Math.round(sx + (ex - sx) * k), Math.round(LANE_PIX - h - Math.sin(Math.PI * k) * 4 + (4 - LANE_PIX + h) * k), TOYS)
-        }
+        if (!m.hit || elapsed <= 300 || elapsed >= m.dur - 300 || k < 0 || k >= 1) return
+        const spot = SPOTS[scene]
+        const w = spot.rows[0].length
+        const h = spot.rows.length
+        const sx = ahead(w) + Math.floor(w / 2)
+        const ex = dir === 1 ? x + 9 : x + 1
+        plot(FISH, Math.round(sx + (ex - sx) * k), Math.round(LANE_PIX - h - Math.sin(Math.PI * k) * 4 + (4 - LANE_PIX + h) * k), TOYS)
       },
     },
   },

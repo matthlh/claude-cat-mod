@@ -31,7 +31,9 @@ export function activityOf(pack: Pack, id: string | undefined): Activity | undef
 // to a pack. One this pack lacks maps to one of its own, the same one every
 // time, so the hero keeps a look of its own in each pack.
 export function lookOf(pack: Pack, id: Identity | undefined): Identity {
-  const who = id ?? { marking: 'none', shiny: false }
+  // A saved identity is trusted to be well formed only so far: one rolled
+  // without a marking (or by an older version) reads as 'none'.
+  const who = id ? (typeof id.marking === 'string' ? id : { ...id, marking: 'none' }) : { marking: 'none', shiny: false }
   const { markings } = pack
   if (who.marking === 'none' || markings.includes(who.marking)) return who
   if (markings.length === 0) return { ...who, marking: 'none' }

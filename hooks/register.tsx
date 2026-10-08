@@ -302,7 +302,7 @@ export const register: Register = on => {
     // shiny. Every pack shares it; lookOf maps the marking into each pack's own.
     let who = (await $.store.get('identity')) as Identity | undefined
     if (!who) {
-      who = { marking: pick(pack.markings), shiny: Math.random() < 1 / 50 }
+      who = { marking: pack.markings.length ? pick(pack.markings) : 'none', shiny: Math.random() < 1 / 50 }
       await $.store.set('identity', who)
     }
     await update($, identity, () => who as Identity)
@@ -472,7 +472,8 @@ export const register: Register = on => {
     const pack = await activePack($)
     const owned = unlockedHats(pack, await read($, stats))
     if (owned.length === 0) {
-      await wake('sit', `no hats yet! (${pack.hats[0].hint})`, 3500)
+      const hint = pack.hats[0]?.hint
+      await wake('sit', hint ? `no hats yet! (${hint})` : 'no hats here!', 3500)
     } else {
       await setPrefs($, p => ({ ...p, hat: cycle(['none', ...owned], owned.includes(p.hat) ? p.hat : 'none') }))
       await wake('pet', 'fancy!', 2500)

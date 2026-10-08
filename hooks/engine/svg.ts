@@ -157,7 +157,9 @@ export function laneSvg(pack: Pack, c: Cat, m: Motion, now: number, palette: Pal
     ? `<svg x="0" y="${HEADROOM}" width="100%" height="${HERO_H}" overflow="visible"><g shape-rendering="crispEdges">${act.stage.svg(ctx)}</g></svg>`
     : ''
   // Over the hero, moving with its hops and bounces.
-  const over = act?.over ? `<g transform="translate(0 ${HAT_PAD * PX})">${act.over.svg(ctx)}</g>` : ''
+  // A layer with nothing for the desktop (a terminal-only one) adds nothing.
+  const overSvg = act?.over ? act.over.svg(ctx) : ''
+  const over = overSvg ? `<g transform="translate(0 ${HAT_PAD * PX})">${overSvg}</g>` : ''
 
   // In bed: shifted onto it and lifted, after a little hop up.
   let bedOpen = '<g><g><g>'

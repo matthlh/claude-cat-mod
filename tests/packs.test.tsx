@@ -107,6 +107,22 @@ test("a marking from another pack becomes one of this pack's own, the same every
   }
 })
 
+test('an identity saved without a marking still draws, in every pack', () => {
+  const now = 50_000
+  const m: Motion = { from: 0.4, to: 0.4, t0: now - 500, dur: 3000 }
+  const c = { mood: 'idle' as const, dir: 1 as const, say: null }
+  for (const pack of Object.values(PACKS)) {
+    // What a pack with no markings once rolled: pick([]) is undefined.
+    const broken = { marking: undefined as unknown as string, shiny: true }
+    const look = lookOf(pack, broken)
+    expect(typeof look.marking).toBe('string')
+    expect(look.shiny).toBe(true)
+    const coat = pack.coats[pack.defaults.coat]
+    expect(laneSvg(pack, c, m, now, coat, pack.defaults.scene, { identity: broken })).toContain('<svg')
+    expect(laneCells(pack, c, m, now, coat, COLS, pack.defaults.scene, { identity: broken }).length).toBe(cellsLength(COLS))
+  }
+})
+
 test('poses take any number of frames, and layers stack the same on both surfaces', () => {
   const pack = DEFAULT_PACK
   const coat = pack.coats[pack.defaults.coat]
