@@ -100,7 +100,7 @@ Write the full path. Older versions don't expand `~` here, so `~/.claude/mods/pi
 
 ## Customize
 
-The sprites are 12×10 grids of letters in [`hooks/register.tsx`](hooks/register.tsx):
+The sprites are 12×10 grids of letters in [`hooks/packs/cat/sprites.ts`](hooks/packs/cat/sprites.ts):
 
 | Letter | Color |
 | --- | --- |
@@ -111,7 +111,9 @@ The sprites are 12×10 grids of letters in [`hooks/register.tsx`](hooks/register
 | `n` | nose |
 | `w` | chest |
 
-Edit the grids or the `PALETTE` to make a tuxedo, calico or black cat. In an interactive session, saving the file hot-reloads the mod.
+Edit the grids or the `COATS` to make a tuxedo, calico or black cat. In an interactive session, saving the file hot-reloads the mod.
+
+Everything the cat is lives in one pack, [`hooks/packs/cat/`](hooks/packs/cat): its sprites, coats, scenes, hats and activities. The lane machinery in [`hooks/engine/`](hooks/engine) reads a pack through the interface in [`hooks/packs/types.ts`](hooks/packs/types.ts), so a new pack is one folder plus a line in [`hooks/packs/index.ts`](hooks/packs/index.ts). An activity is one entry in the pack's `activities`: its weights, how it moves, its pose, what it leads into, its lines, and its drawing on both surfaces.
 
 Check your changes with:
 

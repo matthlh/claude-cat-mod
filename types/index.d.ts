@@ -7,7 +7,7 @@ export type Cat = {
   say: string | null
   /** when the current line started, in ms, for the typewriter reveal */
   sayAt?: number
-  /** when it last woke from a proper sleep, so the perch can slide away */
+  /** when it last woke from a proper sleep, so the bed can slide away */
   wokeAt?: number
   /** what it's working with while Claude runs a tool */
   prop?: ToolProp | null
@@ -25,23 +25,19 @@ export type Motion = {
   to: number
   t0: number
   dur: number
-  /** what the cat is up to on this leg; absent is a plain walk or pause */
+  /** what the hero is up to on this leg; absent is a plain walk or pause */
   activity?: Activity
-  /** laser: how many more zips follow this one */
+  /** a repeating activity: how many more legs of it follow this one */
   chain?: number
-  /** fish: whether this fishing trip ends with a catch */
+  /** whether this leg ends in a catch (an activity with a hit chance: the cat's fishing) */
   hit?: boolean
 }
 
-export type Activity =
-  | 'walk' | 'sit' | 'groom' | 'nap' | 'hop' | 'yarn' | 'mouse' | 'butterfly'
-  | 'caught' | 'bird' | 'flyaway' | 'fish' | 'laser'
-  // bedtime: walking to the perch, then asleep on it
-  | 'bed' | 'perch'
-  // while Claude runs a tool: sitting with a book, laptop, terminal or magnifier
-  | 'busy'
-  // mischief: walk to a mug and knock it off its table; sit on the usage stats
-  | 'knock' | 'shove' | 'meter' | 'sitmeter'
+/**
+ * An activity id from the active pack (hooks/packs/<pack>/), or one of
+ * bedtime's two legs: 'bed' (walking to the bed) and 'perch' (asleep in it).
+ */
+export type Activity = string
 
 export type Limits = {
   fiveHour: number | null
@@ -50,12 +46,15 @@ export type Limits = {
   fiveHourResets: string | null
 }
 
-export type Coat = 'orange' | 'tuxedo' | 'black' | 'grey' | 'cream' | 'sakura'
 export type Speed = 'chill' | 'normal' | 'zoomies'
-export type Scene = 'clear' | 'grass' | 'night' | 'cozy'
 
-export type Hat = 'none' | 'party' | 'beanie' | 'wizard' | 'crown'
-export type Marking = 'none' | 'blaze' | 'socks' | 'tip' | 'spot'
+/** A registered pack's id: 'cat', or another folder under hooks/packs. */
+export type PackId = string
+/** Ids from the active pack: a key of its coats, scenes, hats ('none' for bare) and markings. */
+export type Coat = string
+export type Scene = string
+export type Hat = string
+export type Marking = string
 
 /** Rolled once per install and kept: what makes this cat yours. */
 export type Identity = {
@@ -70,6 +69,8 @@ export type Stats = {
 }
 
 export type Prefs = {
+  /** absent in prefs saved before packs: loads as the cat */
+  pack: PackId
   coat: Coat
   speed: Speed
   scene: Scene
