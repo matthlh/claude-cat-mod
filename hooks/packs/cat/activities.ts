@@ -2,7 +2,7 @@ import { faceRight, frames, rects } from '../../engine/draw'
 import { HERO_H, LANE_PIX, PX } from '../../engine/geometry'
 import type { Activity, Dir } from '../types'
 import {
-  BIRD, BIRD_DOWN, BIRD_PECK, BIRD_UP, FISH, FLY_OPEN, FLY_SHUT, MOUSE_A, MOUSE_B, MUG, PROP_COLORS, SPOT_PAL,
+  BIRD, BIRD_DOWN, BIRD_PECK, BIRD_UP, BOWL, FISH, FLY_OPEN, FLY_SHUT, MOUSE_A, MOUSE_B, MUG, PROP_COLORS, SPOT_PAL,
   TABLE, TOOL_ROWS, TOYS, YARN,
 } from './critters'
 import { SCENES } from './scenes'
@@ -12,7 +12,11 @@ const scurry = (now: number) => (Math.floor(now / 80) % 2 ? MOUSE_B : MOUSE_A)
 
 // A table with a mug on it (desktop), `x` px ahead of the cat.
 const tableSvg = (x: number) => `<g transform="translate(${x} ${HERO_H - TABLE.length * PX})">${rects(TABLE, PROP_COLORS)}</g>`
-const mugAt = (x: number, dir: Dir) => [x + (dir === 1 ? 2 : 3) * PX, HERO_H - TABLE.length * PX - MUG.length * PX]
+const mugAt = (x: number, dir: Dir): [number, number] => [x + (dir === 1 ? 2 : 3) * PX, HERO_H - TABLE.length * PX - MUG.length * PX]
+// A sprite's width: its first row's.
+const widthOf = (rows: string[]) => rows[0]?.length ?? 0
+// The fishing spot in a scene, the clear scene's if it has none.
+const spotOf = (scene: string) => (SCENES[scene] ?? SCENES.clear)?.spot ?? BOWL
 const mugRows = (dir: Dir) => (dir === 1 ? MUG : faceRight(MUG))
 
 // Everything the cat does, in the order the weighted pick walks them.
@@ -87,8 +91,8 @@ export const ACTIVITIES: Record<string, Activity> = {
     then: leg => ({ activity: 'sit', line: leg.hit ? 'got one! ♥' : 'next time…' }),
     draw: {
       svg: ({ leg: m, dir, scene, ahead, at }) => {
-        const spot = SCENES[scene].spot
-        const w = spot.rows[0].length * PX
+        const spot = spotOf(scene)
+        const w = widthOf(spot.rows) * PX
         const h = spot.rows.length * PX
         const x = ahead(w, 2)
         const k = Math.min(0.2, 400 / m.dur).toFixed(3)
@@ -120,8 +124,8 @@ export const ACTIVITIES: Record<string, Activity> = {
       cells: ({ leg: m, now, scene, ahead, plot }) => {
         const elapsed = now - m.t0
         if (elapsed <= 300 || elapsed >= m.dur - 300) return
-        const spot = SCENES[scene].spot
-        const w = spot.rows[0].length
+        const spot = spotOf(scene)
+        const w = widthOf(spot.rows)
         const h = spot.rows.length
         const px = ahead(w)
         plot(spot.rows, px, LANE_PIX - h, SPOT_PAL)
@@ -144,8 +148,8 @@ export const ACTIVITIES: Record<string, Activity> = {
         const elapsed = now - m.t0
         const k = (elapsed - (m.dur - 1200)) / 900
         if (!m.hit || elapsed <= 300 || elapsed >= m.dur - 300 || k < 0 || k >= 1) return
-        const spot = SCENES[scene].spot
-        const w = spot.rows[0].length
+        const spot = spotOf(scene)
+        const w = widthOf(spot.rows)
         const h = spot.rows.length
         const sx = ahead(w) + Math.floor(w / 2)
         const ex = dir === 1 ? x + 9 : x + 1
@@ -187,7 +191,7 @@ export const ACTIVITIES: Record<string, Activity> = {
       <circle r="4.5" fill="#ff3b3b" opacity="0.3"/><circle r="1.8" fill="#ff6060"/>
     </g></g>`,
       cells: ({ now, ahead, plot }) => {
-        const j = [0, 1, -1, 1, 0, -1][Math.floor(now / 90) % 6]
+        const j = [0, 1, -1, 1, 0, -1][Math.floor(now / 90) % 6] ?? 0
         plot(['L'], ahead(1) + j, LANE_PIX - 1 - (j === 1 ? 1 : 0), { L: 0xff3b3b })
       },
     },
@@ -203,7 +207,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     target: {
       ownEdges: true,
       svg: ({ dir, ahead }) => {
-        const x = ahead(TABLE[0].length * PX)
+        const x = ahead(widthOf(TABLE) * PX)
         const [mugX, mugY] = mugAt(x, dir)
         return `<g shape-rendering="crispEdges">
       ${tableSvg(x)}
@@ -211,7 +215,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     </g>`
       },
       cells: ({ ahead, plot }) => {
-        const bx = ahead(TABLE[0].length)
+        const bx = ahead(widthOf(TABLE))
         plot(TABLE, bx, LANE_PIX - TABLE.length, PROP_COLORS)
         plot(MUG, bx + 2, LANE_PIX - TABLE.length - MUG.length, PROP_COLORS)
       },
@@ -279,7 +283,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     // Tap, tap… then the mug slides off the edge and smashes.
     draw: {
       svg: ({ leg: m, dir, ahead, at }) => {
-        const x = ahead(TABLE[0].length * PX)
+        const x = ahead(widthOf(TABLE) * PX)
         const [mugX, mugY] = mugAt(x, dir)
         const fall = TABLE.length * PX
         const shards = `<g opacity="0" transform="translate(${mugX + dir * 22} ${HERO_H - 3})"><animate attributeName="opacity" values="0;0;1" keyTimes="0;0.6;0.61" dur="${m.dur}ms" begin="${at(0)}" fill="freeze"/>${rects(['M.m.M'], PROP_COLORS)}</g>`
@@ -291,7 +295,7 @@ export const ACTIVITIES: Record<string, Activity> = {
       </g></g>`
       },
       cells: ({ leg: m, now, dir, ahead, plot }) => {
-        const bx = ahead(TABLE[0].length)
+        const bx = ahead(widthOf(TABLE))
         plot(TABLE, bx, LANE_PIX - TABLE.length, PROP_COLORS)
         const k = (now - m.t0) / m.dur
         const mx = bx + 2 + (k < 0.4 ? 0 : dir * Math.round(Math.min(1, (k - 0.4) / 0.2) * 7))
@@ -319,12 +323,12 @@ export const ACTIVITIES: Record<string, Activity> = {
         const wander = hero.prop === 'search'
           ? '<animateTransform attributeName="transform" type="translate" values="0 0;-4 -4;3 -2;0 0" dur="2.2s" repeatCount="indefinite"/>'
           : ''
-        return `<g transform="translate(${ahead(rows[0].length * PX)} ${HERO_H - rows.length * PX})"><g>${wander}${rects(dir === 1 ? rows : faceRight(rows), PROP_COLORS)}</g></g>`
+        return `<g transform="translate(${ahead(widthOf(rows) * PX)} ${HERO_H - rows.length * PX})"><g>${wander}${rects(dir === 1 ? rows : faceRight(rows), PROP_COLORS)}</g></g>`
       },
       cells: ({ hero, dir, ahead, plot }) => {
         if (!hero.prop) return
         const rows = TOOL_ROWS[hero.prop]
-        plot(dir === 1 ? rows : faceRight(rows), ahead(rows[0].length), LANE_PIX - rows.length, PROP_COLORS)
+        plot(dir === 1 ? rows : faceRight(rows), ahead(widthOf(rows)), LANE_PIX - rows.length, PROP_COLORS)
       },
     },
   },

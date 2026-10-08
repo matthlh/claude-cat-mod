@@ -1,18 +1,18 @@
-import type { Motion } from '../../../types'
-import { cycle, rects } from '../../engine/draw'
+import type { Motion, Phase } from '../../../types'
+import { cycleFrames, faceRight, posePeriod, rects } from '../../engine/draw'
 import { HERO_COLS, PX } from '../../engine/geometry'
-import { appear, fallOver, GROUND, layers, popTo, track } from '../../engine/track'
-import type { Key, LayerName, Sprite, TrackDraw } from '../../engine/track'
-import type { Activity, CellsCtx, Draw, Palette, Pose, Rows, SvgCtx } from '../types'
+import { appear, fallOver, GROUND, layers, perLeg, popTo, track } from '../../engine/track'
+import type { Key, Sprite, TrackDraw } from '../../engine/track'
+import type { Activity, CellsCtx, Palette, Pose, Rows, SvgCtx } from '../types'
 import {
-  AXE, AXE_DOWN, BOOK, BOW, BOW_ARC, BUNNY_A, BUNNY_B, CHEER, CHAIR, COIN_A, COIN_B, GRIPS, HAMMER, HAMMER_DOWN, HANDS,
+  AXE, AXE_DOWN, AXE_HIGH, BOOK, BOW, BOW_ARC, BUNNY_A, BUNNY_B, CHEER, CHAIR, COIN_A, COIN_B, GRIPS, HAMMER, HAMMER_DOWN, HANDS,
   HOLD_A, ITEM_PAL, LANTERN, MOB_PAL, ORE_COPPER, ORE_GOLD, ORE_IRON, PICKAXE, PICKAXE_DOWN, POOF_1, POOF_2, POOF_3,
   SIT, SLIME_A, SLIME_B, STONE, SWING_A, SWING_B, SWORD, SWORD_DOWN, TOOL_PAL, TORCH_A, TORCH_B, WOOD, WOOD_SWORD,
   ZOMBIE_A, ZOMBIE_B, ZOMBIE_HIT, ARROW,
 } from './sprites'
 import {
   ANVIL, BLOCK_DIRT, BLOCK_GRASS, BLOCK_STONE, BLOCK_WOOD, CRACKS, FURNACE_A, FURNACE_B, LOG, ORE_BLOCK_COPPER,
-  ORE_BLOCK_GOLD, ORE_BLOCK_IRON, STUMP, TREE, WORKBENCH, WORLD_PAL, worldSky,
+  ORE_BLOCK_GOLD, ORE_BLOCK_IRON, STUMP, TREE, WORKBENCH, WORLD_PAL,
 } from './world'
 
 // Everything the adventurer does, in the order the weighted pick walks them.
@@ -24,6 +24,9 @@ import {
 // `now` in the terminal), while a track counts from the leg's start, so a
 // swung pickaxe drawn as a track would drift out of the hand. swing() builds
 // the pose and the tool from one spec on the pose's own clock instead.
+//
+// Whatever depends on the leg (which block, which wall, which foe) is built
+// up front for every case, and perLeg() picks among those drawings per leg.
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -31,8 +34,8 @@ const width = (rows: Rows) => rows.reduce((w, r) => Math.max(w, r.length), 0)
 const one = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)]
 
 // A number from 0 to k-1 that is the same every time for the same input: a
-// leg's start or spot picks its block, tree or wall on both surfaces alike.
-function roll(n: number, k: number): number {
+// leg's start or spot picks its block or wall on both surfaces alike.
+function hashPick(n: number, k: number): number {
   let h = Math.floor(Math.abs(n) * 1000) >>> 0
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0
@@ -41,16 +44,6 @@ function roll(n: number, k: number): number {
 
 const live = (ctx: { leg: Motion; now: number }) => ctx.now < ctx.leg.t0 + ctx.leg.dur
 
-// A layer that draws whichever track `f` picks for this leg and scene, or nothing.
-type Pick = (c: { leg: Motion; scene: string; hero: SvgCtx['hero'] }) => Draw | undefined | null
-function pick(layer: LayerName, f: Pick): TrackDraw {
-  return {
-    layer,
-    svg: ctx => f(ctx)?.svg(ctx) ?? '',
-    cells: ctx => f(ctx)?.cells(ctx),
-  }
-}
-
 // Only while the leg lasts, on the desktop too: something held in a hand
 // that goes back to standing when the leg is over.
 function busyOnly(d: TrackDraw): TrackDraw {
@@ -58,7 +51,7 @@ function busyOnly(d: TrackDraw): TrackDraw {
 }
 
 type Hand = keyof typeof HANDS
-const TOOLS = { AXE, AXE_DOWN, BOOK, BOW_ARC, HAMMER, HAMMER_DOWN, LANTERN, PICKAXE, PICKAXE_DOWN, SWORD, SWORD_DOWN, TORCH_A, TORCH_B, ARROW }
+const TOOLS = { AXE, AXE_DOWN, AXE_HIGH, BOOK, BOW_ARC, HAMMER, HAMMER_DOWN, LANTERN, PICKAXE, PICKAXE_DOWN, SWORD, SWORD_DOWN, TORCH_A, TORCH_B, ARROW }
 type Tool = keyof typeof TOOLS
 
 // Where a tool sits for a pose: its grip on the hand, as [left column, top
@@ -69,42 +62,63 @@ function gripAt(pose: Hand, tool: Tool): [number, number] {
   return [hx - gx, hy - gy]
 }
 
-// A tool held still in a one-frame pose, as a track: beneath the hero, so the
-// hand covers the grip, and gone when the leg ends.
-function held(pose: Hand, tools: Tool[], extra: Partial<Sprite> = {}): TrackDraw {
-  const rows = TOOLS[tools[0]]
-  const w = width(rows)
-  const [lx, y] = gripAt(pose, tools[0])
-  // track() places a 'hero' sprite centred and mirrors the place for a hero
-  // facing left; this x lands its left-facing column on lx.
-  const x = HERO_COLS - lx - w - Math.floor((HERO_COLS - w) / 2)
-  return busyOnly(track({ frames: tools.map(t => TOOLS[t]), pal: TOOL_PAL, anchor: 'hero', layer: 'draw', x, y, linger: true, ...extra }))
+// The terminal has no headroom: a raised tool's head, above row 0, would be
+// cut off and leave a bare stick. There the tool slides down its own handle
+// until its top is on row 0, so the hand holds it nearer the head and the
+// head shows. The way down each handle runs, a step in [x, y], facing left.
+const SLIDE: Partial<Record<Tool, [number, number]>> = { PICKAXE: [-1, 1], AXE: [-1, 1], SWORD: [-1, 1], HAMMER: [0, 1] }
+function fitted(pose: Hand, tool: Tool): [number, number] {
+  const [lx, y] = gripAt(pose, tool)
+  const step = SLIDE[tool]
+  return y >= 0 || !step ? [lx, y] : [lx - step[0] * y, 0]
 }
 
-const SWING_POSES: [Hand, Hand] = ['SWING_A', 'SWING_B']
+// A tool held still in a one-frame pose, as a track: beneath the hero, so the
+// hand covers the grip, and gone when the leg ends. The terminal draws it
+// fitted (see SLIDE), or, with `terminal` false, leaves it out.
+function held(pose: Hand, tools: [Tool, ...Tool[]], extra: Partial<Sprite> = {}, terminal = true): TrackDraw {
+  const rows = TOOLS[tools[0]]
+  const w = width(rows)
+  // track() places a 'hero' sprite centred and mirrors the place for a hero
+  // facing left; this x lands its left-facing column on lx.
+  const at = ([lx, y]: [number, number]) => ({ x: HERO_COLS - lx - w - Math.floor((HERO_COLS - w) / 2), y })
+  const sprite: Sprite = { frames: tools.map(t => TOOLS[t]), pal: TOOL_PAL, anchor: 'hero', layer: 'draw', linger: true, ...extra }
+  const desk = busyOnly(track({ ...sprite, ...at(gripAt(pose, tools[0])) }))
+  const term = track({ ...sprite, ...at(fitted(pose, tools[0])) })
+  return {
+    ...desk,
+    cells: ctx => {
+      if (terminal) term.cells(ctx)
+    },
+  }
+}
 
 // A two-frame swing with a tool in hand: raised behind the head, then brought
-// down ahead. The pose and the tool share one clock, the pose's own.
+// down ahead. The pose and the tool share one clock, the pose's own: `tick`
+// ms a frame, on both surfaces.
 function swing(up: Tool, down: Tool, tick = 350): { pose: Pose; tool: TrackDraw } {
-  const pose: Pose = { frames: [SWING_A, SWING_B], period: (2 * tick) / 1000, tick }
-  const tools = [up, down].map((t, i) => ({ rows: TOOLS[t], at: gripAt(SWING_POSES[i], t) }))
-  const xOf = (t: (typeof tools)[number], dir: 1 | -1) => (dir === 1 ? HERO_COLS - t.at[0] - width(t.rows) : t.at[0])
+  const pose: Pose = { frames: [SWING_A, SWING_B], tick }
+  const period = posePeriod(pose)
+  const tools = ([[up, 'SWING_A'], [down, 'SWING_B']] as const).map(([t, hand]) => ({ rows: TOOLS[t], at: gripAt(hand, t), fit: fitted(hand, t) }))
+  const xOf = (rows: Rows, lx: number, dir: 1 | -1) => (dir === 1 ? HERO_COLS - lx - width(rows) : lx)
   const tool: TrackDraw = {
     layer: 'draw',
     svg: (ctx: SvgCtx) => {
       if (!live(ctx)) return ''
-      const shown = tools.map(t => `<g transform="translate(${xOf(t, ctx.dir) * PX} ${t.at[1] * PX})">${rects(ctx.face(t.rows), TOOL_PAL)}</g>`)
-      return cycle(shown, pose.period ?? 1)
+      const shown = tools.map(t => `<g transform="translate(${xOf(t.rows, t.at[0], ctx.dir) * PX} ${t.at[1] * PX})">${rects(ctx.face(t.rows), TOOL_PAL)}</g>`)
+      return cycleFrames(shown, period)
     },
     cells: (ctx: CellsCtx) => {
       const t = tools[Math.floor(ctx.now / tick) % tools.length]
-      ctx.plot(ctx.face(t.rows), ctx.x + xOf(t, ctx.dir), t.at[1], TOOL_PAL)
+      if (!t) return
+      ctx.plot(ctx.face(t.rows), ctx.x + xOf(t.rows, t.fit[0], ctx.dir), t.fit[1], TOOL_PAL)
     },
   }
   return { pose, tool }
 }
 
-// A puff of smoke where something vanished.
+// A puff of smoke where something vanished, POOF_W wide.
+const POOF_W = width(POOF_2)
 const poof = (from: number, to: number, place: Partial<Sprite>): TrackDraw =>
   track({ frames: [POOF_1, POOF_2, POOF_3], pal: MOB_PAL, tick: 110, hold: true, show: [from, to], ...place })
 
@@ -131,7 +145,7 @@ function hops(t0: number, t1: number, dx0: number, dx1: number, n: number, high:
 // A 2 x 2 cluster of blocks just ahead; a vein of ore runs through it, or it
 // is plain stone (twice as likely). [block, drop] for each kind.
 const KINDS: [Rows, Rows][] = [[BLOCK_STONE, STONE], [ORE_BLOCK_COPPER, ORE_COPPER], [ORE_BLOCK_IRON, ORE_IRON], [ORE_BLOCK_GOLD, ORE_GOLD]]
-const kindOf = (leg: Motion) => [0, 1, 2, 3, 0][roll(leg.t0, 5)]
+const kindOf = (leg: Motion) => [0, 1, 2, 3, 0][hashPick(leg.t0, 5)]
 const CELLS: [number, number][] = [[0, GROUND - 8], [4, GROUND - 8], [0, GROUND - 4], [4, GROUND - 4]]
 const BREAK = 0.8
 
@@ -144,14 +158,16 @@ KINDS.forEach(([block, drop], k) => {
     const rows = k > 0 && (i === 1 || i === 2) ? BLOCK_STONE : block
     mineTracks.push(track({ frames: rows, pal: WORLD_PAL, x, y, show: [0, BREAK], only }))
   })
-  mineTracks.push(popTo({ frames: drop, pal: ITEM_PAL, x: 2, y: GROUND - 6, from: BREAK, at: 0.85, span: 0.12, only }))
+  // A low arc, so it stays under the terminal's top row.
+  mineTracks.push(popTo({ frames: drop, pal: ITEM_PAL, x: 2, y: GROUND - 6, from: BREAK, at: 0.85, span: 0.12, peak: 3, only }))
 })
 // Cracks spread over every block of the cluster as it is struck.
 CRACKS.forEach((crack, s) => {
   const show: [number, number] = [0.2 + s * 0.22, s === 2 ? BREAK : 0.42 + s * 0.22]
   for (const [x, y] of CELLS) mineTracks.push(track({ frames: crack, pal: WORLD_PAL, x, y, show }))
 })
-mineTracks.push(poof(BREAK, 0.94, { x: 2, y: GROUND - 7 }))
+// The puff, centred on the 8 x 8 cluster.
+mineTracks.push(poof(BREAK, 0.94, { x: Math.floor((8 - POOF_W) / 2), y: GROUND - 7 }))
 
 // ── Chopping ────────────────────────────────────────────────────────────
 
@@ -163,7 +179,7 @@ const timberTracks: TrackDraw[] = [
   // The stump is left behind under it, and fades away at the end.
   track({ frames: STUMP, pal: WORLD_PAL, gap: 0, x: 1, keys: [[0.8, 0, 0, 1], [1, 0, 0, 0]] }),
   fallOver({ rows: TREE, fallen: LOG, pal: WORLD_PAL, ...TREE_AT, from: 0.05, to: 0.3, show: [0, 0.5] }),
-  poof(0.5, 0.64, { gap: 0, x: 8, y: GROUND - 5 }),
+  poof(0.5, 0.64, { gap: 0, x: 8, y: GROUND - POOF_1.length }),
   popTo({ frames: WOOD, pal: ITEM_PAL, gap: 0, x: 6, from: 0.5, at: 0.55, span: 0.13 }),
   popTo({ frames: WOOD, pal: ITEM_PAL, gap: 0, x: 11, from: 0.5, at: 0.66, span: 0.14 }),
 ]
@@ -180,35 +196,28 @@ const WALLS: [number, number][][] = [
   [[0, 0], [1, 0], [2, 0], [1, 1], [2, 1]],
 ]
 // The build spot picks the wall, so the admiring leg after it finds the same one.
-const wallOf = (leg: Motion) => WALLS[roll(leg.from + 7, WALLS.length)]
-const materialOf = (scene: string): [Rows, Rows] =>
-  scene === 'cavern' ? [BLOCK_STONE, BLOCK_STONE] : scene === 'cabin' ? [BLOCK_WOOD, BLOCK_WOOD] : [BLOCK_DIRT, BLOCK_GRASS]
+const wallOf = (leg: Motion) => hashPick(leg.from + 7, WALLS.length)
+// What a scene builds with: [body, top] blocks.
+const MATERIALS = { dirt: [BLOCK_DIRT, BLOCK_GRASS], stone: [BLOCK_STONE, BLOCK_STONE], wood: [BLOCK_WOOD, BLOCK_WOOD] } satisfies Record<string, [Rows, Rows]>
+const materialOf = (scene: string): keyof typeof MATERIALS => (scene === 'cavern' ? 'stone' : scene === 'cabin' ? 'wood' : 'dirt')
 
-const wallCache = new Map<string, TrackDraw[]>()
-function wall(leg: Motion, scene: string, placing: boolean): TrackDraw[] {
-  const w = WALLS.indexOf(wallOf(leg))
-  const key = `${w}|${scene}|${placing}`
-  const hit = wallCache.get(key)
-  if (hit) return hit
-  const cells = WALLS[w]
-  const [body, top] = materialOf(scene)
-  const out = cells.map(([c, r], i) => {
+// A wall's blocks: dropping into place in turn while the hammer swings, or
+// standing, to be admired, and fading at the end.
+function wall(cells: [number, number][], [body, top]: [Rows, Rows], placing: boolean): TrackDraw[] {
+  return cells.map(([c, r], i) => {
     const covered = cells.some(([c2, r2]) => c2 === c && r2 === r + 1)
-    const rows = covered ? body : top
-    const place = { frames: rows, pal: WORLD_PAL, x: 4 * c, y: GROUND - 4 * (r + 1), linger: placing }
+    const place = { frames: covered ? body : top, pal: WORLD_PAL, x: 4 * c, y: GROUND - 4 * (r + 1), linger: placing }
     if (!placing) return track({ ...place, keys: [[0.7, 0, 0, 1], [1, 0, 0, 0]] })
-    // Each block drops into place in turn while the hammer swings.
     const t = 0.06 + (i * 0.8) / cells.length
     return track(appear(t, { ...place, keys: [[t, 0, -2], [t + 0.04, 0, 0]] }))
   })
-  wallCache.set(key, out)
-  return out
 }
-const wallLayer = (placing: boolean): TrackDraw => ({
-  layer: 'draw',
-  svg: ctx => wall(ctx.leg, ctx.scene, placing).map(d => d.svg(ctx)).join(''),
-  cells: ctx => wall(ctx.leg, ctx.scene, placing).forEach(d => d.cells(ctx)),
-})
+// Every wall in every material, placing and standing.
+const wallsFor = (placing: boolean) =>
+  Object.fromEntries(Object.entries(MATERIALS).map(([k, m]) => [k, WALLS.map(cells => wall(cells, m, placing))])) as Record<keyof typeof MATERIALS, TrackDraw[][]>
+const WALL_DRAWS = { placing: wallsFor(true), standing: wallsFor(false) }
+const wallLayer = (placing: boolean): TrackDraw =>
+  perLeg('draw', ({ leg, scene }) => WALL_DRAWS[placing ? 'placing' : 'standing'][materialOf(scene)][wallOf(leg)])
 const buildSwing = swing('HAMMER', 'HAMMER_DOWN', 300)
 
 // ── Crafting ────────────────────────────────────────────────────────────
@@ -216,111 +225,103 @@ const buildSwing = swing('HAMMER', 'HAMMER_DOWN', 300)
 // Each scene has its own station: a workbench outdoors and in the cabin, a
 // furnace in the cavern, an anvil under the night sky.
 const STATION: Record<string, Rows[]> = { forest: [WORKBENCH], cabin: [WORKBENCH], cavern: [FURNACE_A, FURNACE_B], night: [ANVIL] }
-const stationOf = (scene: string) => STATION[scene] ?? [WORKBENCH]
 const STATION_GAP = 2
 
-const stationCache = new Map<string, TrackDraw[]>()
+type Made = { rows: Rows; pal: Palette }
+
 // The station, a spark over it while the hammer rings, and what was made.
-function station(scene: string, anchor: 'ahead' | 'target', made?: { rows: Rows; pal: Palette }): TrackDraw[] {
-  const key = `${scene}|${anchor}|${made ? made.pal === ITEM_PAL ? 'a' : 'b' : ''}`
-  const hit = stationCache.get(key)
-  if (hit) return hit
-  const frames = stationOf(scene)
-  const h = frames[0].length
-  const w = width(frames[0])
+function station(frames: Rows[], anchor: 'ahead' | 'target', made?: Made): TrackDraw[] {
+  const first = frames[0] ?? []
+  const h = first.length
+  const w = width(first)
   const place = { anchor, gap: STATION_GAP }
   const out: TrackDraw[] = [track({ frames, pal: WORLD_PAL, tick: 250, linger: true, ...place })]
   if (made) {
     out.push(track({ frames: [SPARK, SPARK_B, SPARK_OFF], pal: SPARK_PAL, tick: 150, ...place, x: 1, y: GROUND - h - 3, show: [0.08, 0.7] }))
-    out.push(popTo({ frames: made.rows, pal: made.pal, ...place, x: Math.floor((w - width(made.rows)) / 2), y: GROUND - h - made.rows.length - 1, from: 0.72, at: 0.86, span: 0.12 }))
+    // Over the station, but never above the terminal's top row, and a flat
+    // hop into the hero for the same reason.
+    const y = Math.max(0, GROUND - h - made.rows.length - 1)
+    out.push(popTo({ frames: made.rows, pal: made.pal, ...place, x: Math.floor((w - width(made.rows)) / 2), y, from: 0.72, at: 0.86, span: 0.12, peak: 1 }))
   }
-  stationCache.set(key, out)
   return out
 }
-// The part of a scene's station drawing in one layer: the station and spark
-// beneath the hero, what was made flying into it over it.
-const stationLayer = (layer: LayerName, anchor: 'ahead' | 'target', made?: { rows: Rows; pal: Palette }): TrackDraw => {
-  const mine = (scene: string) => station(scene, anchor, made).filter(d => d.layer === layer)
-  return {
-    layer,
-    svg: ctx => mine(ctx.scene).map(d => d.svg(ctx)).join(''),
-    cells: ctx => mine(ctx.scene).forEach(d => d.cells(ctx)),
-  }
+// A scene's station drawing, for every scene: the station and spark beneath
+// the hero, what was made flying into it over it (perLeg sorts the layers).
+function stations(anchor: 'ahead' | 'target', made?: Made): (ctx: { scene: string }) => TrackDraw[] {
+  const by = new Map(Object.entries(STATION).map(([scene, frames]) => [scene, station(frames, anchor, made)]))
+  const fallback = station([WORKBENCH], anchor, made)
+  return ({ scene }) => by.get(scene) ?? fallback
 }
 const forgeSwing = swing('HAMMER', 'HAMMER_DOWN', 300)
 const BLADE_PAL: Palette = { ...ITEM_PAL, t: 0xe6ebf0, T: 0xa7b0bb, k: 0x6b4430 }
 
-function forge(made: { rows: Rows; pal: Palette }, line: string): Activity {
+function forge(made: Made, line: string): Activity {
+  const at = stations('ahead', made)
   return {
     move: { stay: 3800 },
     pose: forgeSwing.pose,
     lines: ['*clang clang*', 'almost…'],
     cues: [[3300, line]],
-    ...layers(stationLayer('draw', 'ahead', made), forgeSwing.tool, stationLayer('over', 'ahead', made)),
+    ...layers(perLeg('draw', at), forgeSwing.tool, perLeg('over', at)),
   }
 }
 
 // ── Fighting ────────────────────────────────────────────────────────────
 
 type Foe = { walk: Rows[]; hit: Rows; pal: Palette; hitPal: Palette; tick: number; bounce: number }
-const ZOMBIE: Foe = { walk: [ZOMBIE_A, ZOMBIE_B], hit: ZOMBIE_HIT, pal: MOB_PAL, hitPal: MOB_PAL, tick: 320, bounce: 0 }
+// A foe comes at the hero, so it faces the other way from it. track() turns
+// rows the way the hero faces, so a foe's rows go in turned around.
+const toward = (rows: Rows) => faceRight(rows)
+const ZOMBIE: Foe = { walk: [toward(ZOMBIE_A), toward(ZOMBIE_B)], hit: toward(ZOMBIE_HIT), pal: MOB_PAL, hitPal: MOB_PAL, tick: 320, bounce: 0 }
 // A slime flashes pale when struck.
-const SLIME: Foe = { walk: [SLIME_A, SLIME_B], hit: SLIME_A, pal: MOB_PAL, hitPal: { ...MOB_PAL, j: 0xeefae6, J: 0xffffff, i: 0xb8d0a8 }, tick: 220, bounce: 2 }
-// A slime in the forest by day; after dark, and anywhere else, a zombie.
-const foeOf = (leg: Motion, scene: string) => (scene === 'forest' && !worldSky(new Date(leg.t0).getHours()).isNight ? SLIME : ZOMBIE)
+const SLIME: Foe = { walk: [toward(SLIME_A), toward(SLIME_B)], hit: toward(SLIME_A), pal: MOB_PAL, hitPal: { ...MOB_PAL, j: 0xeefae6, J: 0xffffff, i: 0xb8d0a8 }, tick: 220, bounce: 2 }
+// A slime in the forest by day; after dark, and anywhere else, a zombie. The
+// time of day is the one the fight began in (Motion.phase, carried into its
+// strike or shot), so the foe that came in is the foe that is struck.
+const FOES = { slime: SLIME, zombie: ZOMBIE }
+type FoeId = keyof typeof FOES
+const foeOf = ({ leg, scene, phase }: { leg: Motion; scene: string; phase: Phase }): FoeId =>
+  scene === 'forest' && (leg.phase ?? phase) !== 'night' ? 'slime' : 'zombie'
 
 const SWORD_GAP = 3
 const BOW_GAP = 14
 
 // Shambling (or bouncing) in from far ahead to `gap` before the hero.
-const approachCache = new Map<string, TrackDraw>()
 function approach(foe: Foe, gap: number): TrackDraw {
-  const key = `${foe.tick}|${gap}`
-  const hit = approachCache.get(key)
-  if (hit) return hit
   const keys: Key[] = foe.bounce
     ? hops(0, 0.85, 24, 0, 7, foe.bounce).map(([t, dx, dy], i) => [t, dx, dy, i === 0 ? 0 : 1])
     : [[0, 24, 0, 0], [0.08, 22, 0, 1], [0.85, 0, 0, 1]]
-  const out = track({ frames: foe.walk, pal: foe.pal, tick: foe.tick, gap, keys, linger: true })
-  approachCache.set(key, out)
-  return out
+  return track({ frames: foe.walk, pal: foe.pal, tick: foe.tick, gap, keys, linger: true })
 }
 
 // Struck at `hits`, knocked back a little each time, then a puff and a coin.
-// [from, to] windows of the leg, all at `gap` ahead.
-const bout = new Map<string, TrackDraw[]>()
+// [from, to] windows of the leg, all at `gap` ahead. The coin shows once the
+// puff has billowed, so the foe is seen to go before the drop appears; it
+// arcs low, to stay under the terminal's top row.
 function struck(foe: Foe, gap: number, hits: [number, number], end: number): TrackDraw[] {
-  const key = `${foe.tick}|${gap}`
-  const got = bout.get(key)
-  if (got) return got
   const [h1, h2] = hits
-  const w = width(foe.walk[0])
+  const w = width(foe.walk[0] ?? [])
   const flash = 0.1
-  const out: TrackDraw[] = [
+  return [
     track({ frames: foe.walk, pal: foe.pal, tick: foe.tick, gap, show: [0, h1] }),
     track({ frames: foe.hit, pal: foe.hitPal, gap, show: [h1, h1 + flash], keys: [[h1, 0, 0], [h1 + flash, 2, 0]] }),
     track({ frames: foe.walk, pal: foe.pal, tick: foe.tick, gap, x: 2, show: [h1 + flash, h2] }),
     track({ frames: foe.hit, pal: foe.hitPal, gap, show: [h2, h2 + flash], keys: [[h2, 2, 0], [h2 + flash, 5, -1]] }),
-    poof(h2 + flash, end, { gap, x: 5 + Math.floor((w - 5) / 2), y: GROUND - 6 }),
-    popTo({ frames: [COIN_A, COIN_B], pal: ITEM_PAL, tick: 140, gap, x: 5 + Math.floor((w - 5) / 2), from: h2 + flash + 0.02, at: end, span: 0.14, peak: gap > 6 ? 6 : 4 }),
+    poof(h2 + flash, end, { gap, x: 5 + Math.floor((w - POOF_W) / 2), y: GROUND - 7 }),
+    popTo({ frames: [COIN_A, COIN_B], pal: ITEM_PAL, tick: 140, gap, x: 5 + Math.floor((w - 5) / 2), from: h2 + flash + 0.1, at: end, span: 0.14, peak: 3 }),
   ]
-  bout.set(key, out)
-  return out
 }
-const foeLayer = (gap: number, hits: [number, number], end: number): TrackDraw => ({
-  layer: 'draw',
-  svg: ctx => struck(foeOf(ctx.leg, ctx.scene), gap, hits, end).filter(d => d.layer === 'draw').map(d => d.svg(ctx)).join(''),
-  cells: ctx => struck(foeOf(ctx.leg, ctx.scene), gap, hits, end).filter(d => d.layer === 'draw').forEach(d => d.cells(ctx)),
-})
-const coinLayer = (gap: number, hits: [number, number], end: number): TrackDraw => ({
-  layer: 'over',
-  svg: ctx => struck(foeOf(ctx.leg, ctx.scene), gap, hits, end).filter(d => d.layer === 'over').map(d => d.svg(ctx)).join(''),
-  cells: ctx => struck(foeOf(ctx.leg, ctx.scene), gap, hits, end).filter(d => d.layer === 'over').forEach(d => d.cells(ctx)),
-})
-
-const swordSwing = swing('SWORD', 'SWORD_DOWN', 300)
+// Each foe's drawings for one kind of fight, built up front.
+const perFoe = <T>(f: (foe: Foe) => T): Record<FoeId, T> => ({ slime: f(FOES.slime), zombie: f(FOES.zombie) })
+const APPROACH = { sword: perFoe(foe => approach(foe, SWORD_GAP)), bow: perFoe(foe => approach(foe, BOW_GAP)) }
 const STRIKE_HITS: [number, number] = [0.28, 0.55]
 const SHOOT_HITS: [number, number] = [0.3, 0.6]
+const STRIKE_END = 0.84
+const SHOOT_END = 0.85
+const STRIKE = perFoe(foe => struck(foe, SWORD_GAP, STRIKE_HITS, STRIKE_END))
+const SHOOT = perFoe(foe => struck(foe, BOW_GAP, SHOOT_HITS, SHOOT_END))
+
+const swordSwing = swing('SWORD', 'SWORD_DOWN', 300)
 // Arrows leave the bow and fly to the foe's front: from the nock on the
 // hand (right-facing column) to the foe's near edge.
 const arrowX = HERO_COLS - gripAt('BOW', 'ARROW')[0] - width(ARROW)
@@ -338,17 +339,17 @@ const bunnyHop: Key[] = [[0, 0, 0], [0.5, 0, -1], [1, 0, 0]]
 const workSwing = swing('HAMMER', 'HAMMER_DOWN', 250)
 const workStation = (rows: Rows[]) => [
   track({ frames: rows, pal: WORLD_PAL, tick: 250, gap: STATION_GAP }),
-  track({ frames: [SPARK, SPARK_B, SPARK_OFF, SPARK_OFF], pal: SPARK_PAL, tick: 125, gap: STATION_GAP, x: 1, y: GROUND - rows[0].length - 3 }),
+  track({ frames: [SPARK, SPARK_B, SPARK_OFF, SPARK_OFF], pal: SPARK_PAL, tick: 125, gap: STATION_GAP, x: 1, y: GROUND - (rows[0]?.length ?? 0) - 3 }),
 ]
 const WORK: Record<string, TrackDraw[]> = {
   read: [held('SIT', ['BOOK'])],
   edit: [...workStation([ANVIL]), workSwing.tool],
   bash: [...workStation([FURNACE_A, FURNACE_B]), workSwing.tool],
-  lantern: [held('HOLD_A', ['LANTERN'], { keys: [[0, 0, 0], [0.5, 0, 0.6], [1, 0, 0]], loop: 1600 })],
+  lantern: [held('HOLD_A', ['LANTERN'])],
   torch: [held('HOLD_A', ['TORCH_A', 'TORCH_B'], { tick: 180 })],
 }
-const workOf = (prop: string | null | undefined, scene: string): TrackDraw[] =>
-  prop === 'search' ? WORK[scene === 'cavern' || scene === 'night' ? 'torch' : 'lantern'] : (prop && WORK[prop]) || []
+const workOf = (prop: string | null | undefined, scene: string): TrackDraw[] | undefined =>
+  prop === 'search' ? WORK[scene === 'cavern' || scene === 'night' ? 'torch' : 'lantern'] : prop ? WORK[prop] : undefined
 
 // ── The activities ──────────────────────────────────────────────────────
 
@@ -386,7 +387,9 @@ export const ACTIVITIES: Record<string, Activity> = {
     move: { stay: 3200 },
     pose: { frames: [CHEER] },
     cues: [[2300, '+2 wood']],
-    ...layers(...timberTracks, held('CHEER', ['AXE'])),
+    // The axe brandished up and ahead; the terminal, with no room above the
+    // head for it, cheers empty-handed.
+    ...layers(...timberTracks, held('CHEER', ['AXE_HIGH'], {}, false)),
   },
 
   build: {
@@ -406,7 +409,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     lines: ['time to craft', 'to the bench'],
     then: () => ({ activity: Math.random() < 0.5 ? 'chair' : 'blade' }),
     thenFirst: true,
-    target: stationLayer('target', 'target'),
+    target: perLeg('target', stations('target')),
   },
   chair: forge({ rows: CHAIR, pal: ITEM_PAL }, 'made a chair!'),
   blade: forge({ rows: WOOD_SWORD, pal: BLADE_PAL }, 'forged a blade!'),
@@ -421,7 +424,7 @@ export const ACTIVITIES: Record<string, Activity> = {
     then: leg => ({ activity: leg.hit ? 'shoot' : 'strike' }),
     thenFirst: true,
     ...layers(
-      pick('draw', ({ leg, scene }) => approach(foeOf(leg, scene), leg.hit ? BOW_GAP : SWORD_GAP)),
+      perLeg('draw', ctx => APPROACH[ctx.leg.hit ? 'bow' : 'sword'][foeOf(ctx)]),
       held('HOLD_A', ['SWORD_DOWN'], { only: leg => !leg.hit }),
       held('HOLD_A', ['BOW_ARC'], { only: leg => !!leg.hit }),
     ),
@@ -430,18 +433,18 @@ export const ACTIVITIES: Record<string, Activity> = {
     move: { stay: 2400 },
     pose: swordSwing.pose,
     cues: [[600, 'hyah!'], [2000, '+1 coin']],
-    ...layers(foeLayer(SWORD_GAP, STRIKE_HITS, 0.82), swordSwing.tool, coinLayer(SWORD_GAP, STRIKE_HITS, 0.82)),
+    ...layers(perLeg('draw', ctx => STRIKE[foeOf(ctx)]), swordSwing.tool, perLeg('over', ctx => STRIKE[foeOf(ctx)])),
   },
   shoot: {
     move: { stay: 2600 },
     pose: { frames: [BOW] },
     cues: [[300, 'steady…'], [2200, 'bullseye!']],
     ...layers(
-      foeLayer(BOW_GAP, SHOOT_HITS, 0.84),
+      perLeg('draw', ctx => SHOOT[foeOf(ctx)]),
       held('BOW', ['BOW_ARC']),
       arrow(0.12, 0.3, 0),
       arrow(0.44, 0.6, 2),
-      coinLayer(BOW_GAP, SHOOT_HITS, 0.84),
+      perLeg('over', ctx => SHOOT[foeOf(ctx)]),
     ),
   },
 
@@ -467,9 +470,6 @@ export const ACTIVITIES: Record<string, Activity> = {
       : hero.prop === 'edit' || hero.prop === 'bash' ? workSwing.pose
       : hero.prop === 'search' ? { frames: [HOLD_A] }
       : undefined,
-    draw: {
-      svg: ctx => workOf(ctx.hero.prop, ctx.scene).map(d => d.svg(ctx)).join(''),
-      cells: ctx => workOf(ctx.hero.prop, ctx.scene).forEach(d => d.cells(ctx)),
-    },
+    draw: perLeg('draw', ctx => workOf(ctx.hero.prop, ctx.scene)),
   },
 }

@@ -171,7 +171,9 @@ test('the leaping catch is on screen in every terminal frame of the leap', () =>
   const misses = runs(false).filter(r => !r.label.endsWith('svg'))
   hits.forEach((r, i) => {
     const a = r.frames()
-    const b = misses[i].frames()
+    const miss = misses[i]
+    if (!miss) throw new Error(`${r.label}: no miss to compare with`)
+    const b = miss.frames()
     // Frames 1..23 are el = dur-1200 .. dur-320: the leap itself.
     for (let k = 1; k <= 23; k++) {
       if (a[k] === b[k]) throw new Error(`${r.label}: the catch is hidden ${1200 - 40 * (k - 1)} ms before the end`)

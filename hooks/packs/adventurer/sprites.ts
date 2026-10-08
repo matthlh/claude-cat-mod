@@ -1,8 +1,8 @@
-// Adventurer pack sprites. Plain data only: rows and palettes, no imports.
+// Adventurer pack sprites. Plain data only: rows and palettes.
 // '.' is transparent; every other char is a key into a palette (0xRRGGBB).
 // Everything faces LEFT in source, like the cat; faceRight() mirrors it.
 
-type Palette = Record<string, number>
+import type { Palette } from '../types'
 
 // ── Hero, 12 x 10 ─────────────────────────────────────────────────────────
 // A chibi adventurer: big head with a dark outline (it carries the
@@ -10,8 +10,10 @@ type Palette = Record<string, number>
 // Letters: x outline, h headwear (hair, helmet or hood), r its brim or
 // fringe, g its shade, L a detail at its front (a lamp, a gem), a the back
 // of the head, A its shade, s skin, H eye shine, K eye, t shirt, T shirt
-// shade, p near leg, P far leg, b near boot, B far boot. closeEyes() turns
-// the eyes into o (skin) and d (a lash line), so every outfit defines both.
+// shade, p near leg, P far leg, b near boot, B far boot. The engine's
+// closeEyes() turns the eyes into o (skin) and d (a lash line), so every
+// outfit defines both. The body starts on the row under the head's outline
+// (the last row with an x): hero.ts puts the markings there.
 // The head sits in the same place in every pose but SIT and SLEEP, so a
 // blink laid over one frame fits every frame of a pose.
 const HEAD = [
@@ -28,7 +30,6 @@ export const WALK_A = [...HEAD, '...tttttT...', '...ttttTTs..', '..pppPPPP...', 
 export const WALK_B = [...HEAD, '...tttttT...', '..sttttTT...', '..PPPpppp...', '.BB.....bb..']
 // The arm held out in front at shoulder height, for a torch or a lantern.
 export const HOLD_A = [...HEAD, 'stttttttT...', '...ttttTT...', '..pppPPPP...', '.bb.....BB..']
-export const HOLD_B = [...HEAD, 'stttttttT...', '...ttttTT...', '..PPPpppp...', '.BB.....bb..']
 // Wind-up: the arm goes up the back of the head, the tool raised behind it.
 export const SWING_A = [
   '...xxxxxx...',
@@ -83,21 +84,15 @@ export const SLEEP = [
 
 // Where a held tool goes: the hand pixel [x, y] in each pose, in the
 // left-facing rows above. Facing right, x becomes 11 - x.
-export const HANDS: Record<string, [number, number]> = {
+export const HANDS = {
   STAND: [3, 7],
-  WALK_A: [9, 7],
-  WALK_B: [2, 7],
   HOLD_A: [0, 6],
-  HOLD_B: [0, 6],
   SWING_A: [11, 4],
   SWING_B: [1, 7],
   BOW: [0, 6],
   CHEER: [0, 2],
   SIT: [2, 8],
-}
-// BOW's other hand, where the drawn string meets the chest; CHEER's other fist.
-export const BOW_DRAW_HAND: [number, number] = [3, 6]
-export const CHEER_BACK_HAND: [number, number] = [11, 2]
+} as const satisfies Record<string, readonly [number, number]>
 
 // ── Outfits: one set of hero rows, six palettes ───────────────────────────
 const FACE: Palette = { x: 0x241a16, s: 0xf3c9a0, o: 0xf3c9a0, d: 0x3a2418, H: 0xffffff, K: 0x1e1b22 }
@@ -140,9 +135,10 @@ export const OUTFITS: Record<string, Palette> = {
 // behind the face. Raised tools (SWING_A, CHEER) point up from the grip and
 // back over the shoulder; the *_DOWN versions point ahead of the hero, for
 // SWING_B. In SWING_A a raised tool reaches 2 rows above row 0 and 6 columns
-// behind the frame (CHEER's sword 4 rows above, the desktop's full headroom;
-// the 10-row terminal raster clips what is above row 0); in SWING_B a *_DOWN
-// tool reaches 5 columns ahead, its head at the ground.
+// behind the frame (CHEER's axe 4 rows above, the desktop's full headroom;
+// the 10-row terminal raster has no headroom, so the terminal slides a raised
+// tool down its handle instead: see SLIDE in activities.ts); in SWING_B a
+// *_DOWN tool reaches 5 columns ahead, its head at the ground.
 export const PICKAXE = [
   '..nnnm.',
   '.N...nm',
@@ -167,6 +163,17 @@ export const AXE = [
   '..w....',
   '.w.....',
   'W......',
+]
+// The same axe turned to point up and ahead from the grip: brandished in
+// CHEER's front fist, its head clear of the face and of any hat.
+export const AXE_HIGH = [
+  '..mm...',
+  '.Nnnm..',
+  '.Nwnn..',
+  '..Nw...',
+  '....w..',
+  '.....w.',
+  '......W',
 ]
 export const AXE_DOWN = [
   'm......',
@@ -202,7 +209,8 @@ export const HAMMER_DOWN = [
   'mnwwwW',
   'nN....',
 ]
-// Drawn: the string pulled back to a point on the right, at BOW_DRAW_HAND.
+// Drawn: the string pulled back to a point on the right, where BOW's other
+// hand meets the chest.
 export const BOW_ARC = [
   '.r...',
   'r.s..',
@@ -212,11 +220,12 @@ export const BOW_ARC = [
   'r.s..',
   '.r...',
 ]
-// Flies left; the grip is the nock end.
+// Flies left: a barbed head in front, feathers at the back; the grip is the
+// nock end.
 export const ARROW = [
-  'm...q.',
-  'nwwwwq',
-  'm...q.',
+  '.m...qq',
+  'mnwwwwq',
+  '.m...qq',
 ]
 export const TORCH_A = [
   '.R.',
@@ -243,31 +252,36 @@ export const BOOK = [
   'celCelc',
   'cccCccc',
 ]
-// Hangs from its handle at the hand.
+// A lantern on a short pole, held up like the torch: a ring and a cap, two
+// rows of lit glass, a base, then the pole.
 export const LANTERN = [
   '.k.',
   'kyk',
   'yLy',
+  'yLy',
   'kyk',
+  '.w.',
+  '.W.',
 ]
 
 // The grip pixel [x, y] of each tool.
-export const GRIPS: Record<string, [number, number]> = {
+export const GRIPS = {
   PICKAXE: [0, 6],
   PICKAXE_DOWN: [6, 2],
   AXE: [0, 6],
+  AXE_HIGH: [6, 6],
   AXE_DOWN: [6, 2],
   SWORD: [0, 6],
   SWORD_DOWN: [6, 1],
   HAMMER: [2, 5],
   HAMMER_DOWN: [5, 1],
   BOW_ARC: [1, 3],
-  ARROW: [5, 1],
+  ARROW: [6, 1],
   TORCH_A: [1, 6],
   TORCH_B: [1, 6],
   BOOK: [6, 3],
-  LANTERN: [1, 0],
-}
+  LANTERN: [1, 6],
+} as const satisfies Record<string, readonly [number, number]>
 
 export const TOOL_PAL: Palette = {
   m: 0xe6ebf0, n: 0xa7b0bb, N: 0x5d6570, // steel: edge, face, shadow
@@ -353,27 +367,31 @@ export const BUNNY_B = [
   'vaaaan',
   'A...A.',
 ]
-// A puff of smoke where something vanishes: p puff, P its light, q its shade.
+// A puff of smoke where something vanishes, about as big as a block or a
+// slime: a burst, a cloud, then wisps. p puff, P its light, q its shade.
 export const POOF_1 = [
-  '.....',
-  '..q..',
-  '.qPq.',
-  '..q..',
-  '.....',
+  '.......',
+  '...q...',
+  '..qPq..',
+  '.qPPPq.',
+  '..qPq..',
+  '...q...',
 ]
 export const POOF_2 = [
-  '.pp..',
-  'pPPpp',
-  'pPPPp',
-  'qpPpq',
-  '.qqq.',
+  '..pp.p.',
+  '.pPPpPp',
+  'pPPPPPp',
+  'pPPPPpq',
+  '.qpPpq.',
+  '..qqq..',
 ]
 export const POOF_3 = [
-  'p...p',
-  '.q.q.',
-  '.....',
-  '.q.q.',
-  'p...p',
+  'p.....p',
+  '..p.p..',
+  '.q...q.',
+  '..q.q..',
+  'p.....p',
+  '.......',
 ]
 
 export const MOB_PAL: Palette = {
@@ -433,20 +451,6 @@ export const ORE_GOLD = [
   'ggygd',
   '.dddy',
 ]
-// What a slime leaves behind, in its colours.
-export const GEL = [
-  '..j..',
-  '.jJj.',
-  'jJjjj',
-  'jjjji',
-  '.iii.',
-]
-export const HEART = [
-  'hh.hh',
-  'hWhhH',
-  '.hhH.',
-  '..H..',
-]
 // Crafted at the bench: a wooden sword and a chair (side on, facing left).
 export const WOOD_SWORD = [
   '....t',
@@ -468,7 +472,5 @@ export const ITEM_PAL: Palette = {
   r: 0xe0bb85, R: 0xa87a4a, b: 0x8a5a3c, B: 0x5e3b24, // cut wood, bark
   g: 0x9aa0a6, G: 0xc9ced4, d: 0x6a7078, // stone
   c: 0xf08a3a, f: 0xe0a88a, // copper, iron
-  j: 0x6fd06a, J: 0xd8ffd0, i: 0x3e8f3e, // gel
-  h: 0xe5484d, H: 0xa8262b, W: 0xffc2c4, // heart
   t: 0xe0b47a, T: 0x9a6b47, k: 0x5e3b24, // crafted wood
 }

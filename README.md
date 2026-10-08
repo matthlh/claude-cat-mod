@@ -19,7 +19,7 @@ A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/clau
   - goes fishing: a fishbowl, a fish tank or a river, depending on the scene, and sometimes catches one
   - chases a laser pointer dot back and forth until it vanishes ("where'd it go?")
   - **mischief:** finds a mug on a table, taps it… and knocks it off ("*CRASH*", "oops :3"), or sits right on top of your usage stats until you pet it
-  - **at night** (11pm–6am) it mostly naps
+  - **at night** (9pm–5am, when the scenes turn dark) it mostly naps
 
   ![Props for each tool, hats, a shiny cat, a mug about to be knocked off, and the cat sitting on your stats](docs/working.svg)
 
@@ -51,7 +51,7 @@ In the Claude desktop app the whole lane is one SVG that animates itself (smooth
 
 ## Packs
 
-Everything the hero is and does comes from a pack. Switch packs from ⚙ → **Pack**; your coat, scene and hat carry over wherever the new pack has them.
+Everything the hero is and does comes from a pack. Switch packs from ⚙ → **Pack**. Each pack remembers its own coat (or outfit), scene and hat, so switching back finds them as you left them; a pack you haven't worn yet starts from its defaults, keeping only what it shares with the one you left. Hats unlock at the same milestones in every pack, so a hat earned in one is waiting in the others.
 
 - **Cat:** everything above.
 - **Adventurer:** mines ore out of blocks as cracks spread across them, chops a tree until it falls, builds a little wall or a staircase block by block, and crafts a chair or a blade at a workbench, furnace or anvil. Zombies shamble in, far more often at night (a slime in the forest by day), and get the sword or, 40% of the time, the bow, with a coin for the trouble. A bunny hops by now and then. While Claude works it reads (Read), hammers at the anvil (edits), works the furnace (shell commands) or searches by lantern or torch. The food bowl becomes a potion that drains as the context fills. Six outfits (Starter, Miner, Mage, Ranger, Knight, Gold), four scenes (Forest, Cavern, Night, Cabin) each with its own bed, and its own hats: a feather, a horned helm, a crown and a wizard hat.
@@ -122,22 +122,23 @@ The sprites are 12×10 grids of letters in [`hooks/packs/cat/sprites.ts`](hooks/
 
 Edit the grids or the `COATS` to make a tuxedo, calico or black cat. In an interactive session, saving the file hot-reloads the mod.
 
-Everything the cat is lives in one pack, [`hooks/packs/cat/`](hooks/packs/cat): its sprites, coats, scenes, hats and activities. The lane machinery in [`hooks/engine/`](hooks/engine) reads a pack through the interface in [`hooks/packs/types.ts`](hooks/packs/types.ts), so a new pack is one folder plus a line in [`hooks/packs/index.ts`](hooks/packs/index.ts). An activity is one entry in the pack's `activities`: its weights, how it moves, its pose, what it leads into, its lines, and its drawing on both surfaces. The engine names only two activity ids itself, bedtime's `bed` and `perch`; they are reserved, and [`hooks/packs/index.ts`](hooks/packs/index.ts) refuses a pack that defines either, or whose `roles` name an activity it doesn't have.
+Everything the cat is lives in one pack, [`hooks/packs/cat/`](hooks/packs/cat): its sprites, coats, scenes, hats and activities. The lane machinery in [`hooks/engine/`](hooks/engine) reads a pack through the interface in [`hooks/packs/types.ts`](hooks/packs/types.ts), so a new pack is one folder plus an import and an entry in `admit([...])` in [`hooks/packs/index.ts`](hooks/packs/index.ts). The engine owns what every pack shares: the time of day (night is 9pm–5am), blinks, the room above the sprite where hats go, and the four milestones that unlock a hat; a pack brings one hat for each. An activity is one entry in the pack's `activities`: its weights, how it moves, its pose, what it leads into, its lines, and its drawing on both surfaces. The engine names only two activity ids itself, bedtime's `bed` and `perch`; they are reserved, and [`hooks/packs/index.ts`](hooks/packs/index.ts) refuses a pack that defines either, or whose `roles` name an activity it doesn't have.
 
 Check your changes with:
 
 ```bash
 claude plugin validate ~/.claude/mods/pixel-cat
 claude plugin test ~/.claude/mods/pixel-cat
+npx -p typescript tsc -p ~/.claude/mods/pixel-cat
 ```
 
-The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity of every pack and the bed in every scene, so a drawing the engine would refuse fails there instead of silently disappearing. They also follow every activity's `then` and fail on one that leads nowhere, since a typo there would otherwise become a plain wander.
+The last line type-checks the mod with the engine's strict settings (Claude Code writes them to `.claude-plugin/types/` when it loads the mod; the root `tsconfig.json` extends them, leaving out the frozen golden test). The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity of every pack and the bed in every scene, so a drawing the engine would refuse fails there instead of silently disappearing. They also follow every activity's `then` and fail on one that leads nowhere, since a typo there would otherwise become a plain wander.
 
 ### Make your own pack
 
-1. Copy [`hooks/packs/adventurer/`](hooks/packs/adventurer) to `hooks/packs/<yours>/` and give the pack in its `index.ts` a new `id`, `label` and `noun`.
+1. Copy [`hooks/packs/adventurer/`](hooks/packs/adventurer) to `hooks/packs/<yours>/`. In its `index.ts`, rename the export (`export const yours: Pack`) and give it a new `id`, `label` and `noun`.
 2. Redraw the sprites, outfits and scenes, and change the activities. Each activity is drawn with the track helper in [`hooks/engine/track.ts`](hooks/engine/track.ts): a sprite, where it sits and how it moves over the leg, drawn the same on both surfaces.
-3. Register it in [`hooks/packs/index.ts`](hooks/packs/index.ts): import it and add it to `admit([cat, adventurer, yours])`.
+3. Register it in [`hooks/packs/index.ts`](hooks/packs/index.ts): `import { yours } from './<yours>/index'` and add it to `admit([cat, adventurer, yours])`.
 4. Check it:
 
    ```bash
@@ -145,4 +146,4 @@ The tests draw the band on the desktop and terminal surfaces, press the buttons,
    claude plugin test ~/.claude/mods/pixel-cat
    ```
 
-The tests pick up every registered pack on their own: each activity is drawn in every scene, through its whole leg, on both surfaces, and every desktop frame has to stay under the 131,072-character limit.
+The tests pick up every registered pack on their own: each activity is drawn in every scene, at several moments through its leg, on both surfaces, and each of those desktop drawings has to stay under the 131,072-character limit.

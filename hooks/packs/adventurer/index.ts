@@ -1,7 +1,7 @@
 import { clamp01 } from '../../engine/draw'
 import type { Pack, Palette, Rows } from '../types'
 import { ACTIVITIES } from './activities'
-import { HATS, HERO, lookOf, MARKINGS } from './hero'
+import { describeLook, HATS, HERO, MARKINGS } from './hero'
 import { OUTFITS } from './sprites'
 import { ADVENTURER_WORLD } from './world'
 
@@ -14,11 +14,13 @@ const INSIDE: [number, number][] = [[4, 1], [4, 2], [4, 3], [4, 4], [3, 1], [3, 
 function potionRows(ctx: number): Rows {
   const n = Math.round(INSIDE.length * clamp01(1 - ctx / 100))
   const rows = BOTTLE.map(r => [...r])
-  INSIDE.forEach(([y, x], i) => {
-    rows[y][x] = i < n ? 'R' : 'e'
-  })
+  const set = (y: number, x: number, ch: string) => {
+    const row = rows[y]
+    if (row) row[x] = ch
+  }
+  INSIDE.forEach(([y, x], i) => set(y, x, i < n ? 'R' : 'e'))
   // A glint on the glass while there is potion behind it.
-  if (n >= 6) rows[3][1] = 'W'
+  if (n >= 6) set(3, 1, 'W')
   return rows.map(r => r.join(''))
 }
 
@@ -26,6 +28,7 @@ export const adventurer: Pack = {
   id: 'adventurer',
   label: 'Adventurer',
   noun: 'adventurer',
+  coatLabel: 'Outfit',
   hero: HERO,
   coats: OUTFITS,
   scenes: ADVENTURER_WORLD,
@@ -45,7 +48,7 @@ export const adventurer: Pack = {
     petAsleep: ['five more minutes…', '*snore*'],
     shown: 'Adventurer is back ⚔️',
     hidden: 'Adventurer hidden (run /cat again to bring it back).',
-    look: id => lookOf(id.marking),
+    look: id => describeLook(id.marking),
     done: secs => `quest done! ${secs}s`,
     oops: 'ouch! an error',
   },

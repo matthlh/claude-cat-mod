@@ -1,3 +1,4 @@
+import type { ToolProp } from '../../../types'
 import type { Palette, Rows } from '../types'
 
 // ── Companions ───────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ export const TOYS: Palette = {
 
 // Props: a book, a laptop, a terminal, a magnifying glass; a table and a mug.
 // These face right.
-export const TOOL_ROWS: Record<string, Rows> = {
+export const TOOL_ROWS: Record<ToolProp, Rows> = {
   read: ['.wwcww.', 'wwwcwww', 'wwwcwww', 'ccccccc'],
   edit: ['kkkkk..', 'ksssk..', 'ksssk..', 'kkkkk..', 'ggggggg'],
   bash: ['kkkkkk', 'kGkkkk', 'kkGkkk', 'kGkGGk', 'kkkkkk', '..gg..'],

@@ -1,9 +1,10 @@
 import { test, expect } from 'claude-code/testing'
+import { coatOf } from '../hooks/engine/lane'
 import { laneCells } from '../hooks/engine/cells'
 import { faceRight } from '../hooks/engine/draw'
 import { HERO_W, LANE_ROWS, MAX_X, PX } from '../hooks/engine/geometry'
 import { laneSvg } from '../hooks/engine/svg'
-import { appear, fallOver, GROUND, layers, popTo, sample, track, vanish } from '../hooks/engine/track'
+import { appear, fallOver, GROUND, layers, perLeg, popTo, sample, track } from '../hooks/engine/track'
 import type { Key, Sprite, TrackDraw } from '../hooks/engine/track'
 import { DEFAULT_PACK } from '../hooks/packs/index'
 import type { Activity, CellsCtx, Dir, Draw, Pack, Rows, SvgCtx } from '../hooks/packs/types'
@@ -27,6 +28,8 @@ function svgCtx(dir: Dir, now: number, m: Motion = LEG): SvgCtx {
     now,
     dir,
     scene: 'clear',
+    hour: 12,
+    phase: 'day',
     face: rows => (dir === 1 ? faceRight(rows) : rows),
     PX,
     walking: false,
@@ -46,6 +49,8 @@ function cellsOf(d: Draw, dir: Dir, now: number, m: Motion = LEG): [number, numb
     now,
     dir,
     scene: 'clear',
+    hour: 12,
+    phase: 'day',
     face: rows => (dir === 1 ? faceRight(rows) : rows),
     x: HX,
     ahead: (w, gap = 1) => (dir === 1 ? HX + 12 + gap : HX - w - gap),
@@ -168,7 +173,7 @@ test('opacity 0 plots nothing, and show windows hide it on both surfaces', () =>
 
   const plain: Sprite = { frames: ROCK, pal: PAL }
   const late = track(appear(0.4, plain))
-  const early = track(vanish(0.6, plain))
+  const early = track({ ...plain, show: [0, 0.6] })
   expect(cellsOf(late, 1, at(0.3))).toEqual([])
   expect(cellsOf(late, 1, at(0.5)).length).toBe(4)
   expect(cellsOf(early, 1, at(0.5)).length).toBe(4)
@@ -214,7 +219,7 @@ test('popTo arcs a drop into the hero; fallOver tips on the desktop and swaps on
 
 test('layers() puts each track where its anchor says, in the frames the engine hands out', () => {
   const pack = DEFAULT_PACK
-  const coat = pack.coats[pack.defaults.coat]
+  const coat = coatOf(pack)
   const scene = pack.defaults.scene
   const COLS = 80
   const withAct = (a: Activity): Pack => ({ ...pack, activities: { ...pack.activities, probe: a } })
@@ -232,8 +237,8 @@ test('layers() puts each track where its anchor says, in the frames the engine h
   ]
   for (const [t, layer, cells] of cases) {
     expect(t.layer).toBe(layer)
-    const mine = withAct({ ...layers(t), arc: [[1000, 3, -2]] })
-    const theirs = withAct({ ...by(layer, cells), arc: [[1000, 3, -2]] })
+    const mine = withAct({ ...layers(t) })
+    const theirs = withAct({ ...by(layer, cells) })
     for (const m of legs) {
       for (const dir of [1, -1] as const) {
         const c = { mood: 'idle' as const, dir, say: null }
@@ -286,4 +291,25 @@ test('whatever holds where it ends is timed over the whole leg, so a redraw afte
       }
     }
   }
+})
+
+test('perLeg draws the drawings picked for each leg, only those in its layer', () => {
+  const rock = track({ frames: ROCK, pal: PAL })
+  const drop = popTo({ frames: ['b'], pal: PAL, at: 0.2 })
+  const other = track({ frames: ROCK2, pal: PAL })
+  // A hit leg gets the rock and its drop; a miss, the other rock.
+  const draw = perLeg('draw', ({ leg }) => (leg.hit ? [rock, drop] : other))
+  const over = perLeg('over', ({ leg }) => (leg.hit ? [rock, drop] : null))
+  const hit: Motion = { ...LEG, hit: true }
+  const miss: Motion = { ...LEG, hit: false }
+  for (const dir of [1, -1] as const) {
+    const now = T0 + 0.25 * DUR
+    expect(cellsOf(draw, dir, now, hit)).toEqual(cellsOf(rock, dir, now, hit))
+    expect(cellsOf(draw, dir, now, miss)).toEqual(cellsOf(other, dir, now, miss))
+    expect(cellsOf(over, dir, now, hit)).toEqual(cellsOf(drop, dir, now, hit))
+    expect(cellsOf(over, dir, now, miss)).toEqual([])
+    expect(draw.svg(svgCtx(dir, now, hit))).toBe(rock.svg(svgCtx(dir, now, hit)))
+    expect(over.svg(svgCtx(dir, now, miss))).toBe('')
+  }
+  expect([draw.layer, over.layer]).toEqual(['draw', 'over'])
 })

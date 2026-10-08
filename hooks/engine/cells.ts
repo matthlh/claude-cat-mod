@@ -2,9 +2,10 @@ import type { HeroState, Motion } from '../../types'
 import type { CellsCtx, Pack, Palette, Rows } from '../packs/types'
 import { faceRight } from './draw'
 import { HAT_PAD, HERO_COLS, LANE_PIX, LANE_ROWS, TERMINAL_DEFAULT } from './geometry'
-import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
+import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
 import type { Extras, Lane } from './lane'
-import { posAt, trackAt } from './motion'
+import { posAt } from './motion'
+import { hourOf, phaseAt } from './time'
 
 // ── Terminal: the lane is one Raster, repainted in place ────────────────
 
@@ -12,11 +13,11 @@ const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 function base64(bytes: Uint8Array): string {
   let out = ''
   for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i], b = bytes[i + 1] ?? 0, c = bytes[i + 2] ?? 0
+    const a = bytes[i] ?? 0, b = bytes[i + 1] ?? 0, c = bytes[i + 2] ?? 0
     const n = (a << 16) | (b << 8) | c
-    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63]
-    out += i + 1 < bytes.length ? B64[(n >> 6) & 63] : '='
-    out += i + 2 < bytes.length ? B64[n & 63] : '='
+    out += B64.charAt((n >> 18) & 63) + B64.charAt((n >> 12) & 63)
+    out += i + 1 < bytes.length ? B64.charAt((n >> 6) & 63) : '='
+    out += i + 2 < bytes.length ? B64.charAt(n & 63) : '='
   }
   return out
 }
@@ -45,13 +46,13 @@ function heroRows(pack: Pack, c: HeroState, l: Lane, now: number): Rows {
   let rows: Rows
   if (l.posture === 'walk') {
     const stride = c.mood === 'working' ? hero.rush : l.act?.stride ?? hero.stride
-    rows = hero.walk[Math.floor(now / stride) % 2]
+    rows = hero.walk[Math.floor(now / stride) % 2] ?? hero.walk[0]
   } else {
-    const p = l.pose ?? hero.sit
-    rows = p.frames[Math.floor(now / (p.tick ?? 500)) % p.frames.length]
+    const p = l.pose ?? hero.idle
+    rows = p.frames[Math.floor(now / (p.tick ?? 500)) % p.frames.length] ?? p.frames[0]
     if (p.shut) return rows
   }
-  return isHappy(c.mood) || now % 4000 > 3850 ? hero.closeEyes(rows) : rows
+  return isHappy(c.mood) || now % 4000 > 3850 ? shut(hero, rows) : rows
 }
 
 export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, palette: Palette, cols: number, sceneId: string, x: Extras = {}): string {
@@ -63,7 +64,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
   const plot = (rows: Rows, x0: number, y0: number, colors: Palette) => {
     rows.forEach((row, y) => {
       for (let x = 0; x < row.length; x++) {
-        const color = colors[row[x]]
+        const color = colors[row.charAt(x)]
         const px = x0 + x
         const py = y0 + y
         if (color !== undefined && px >= 0 && px < cols && py >= 0 && py < LANE_PIX) pixels[py * cols + px] = color
@@ -79,7 +80,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
 
   // The bed slides in from the left at bedtime.
   const bed = scene.bed
-  const pw = bed.rows[0].length
+  const pw = bed.rows[0]?.length ?? 0
   const ph = bed.rows.length
   const shown = bedShown(c, m, now)
   if (shown !== null) plot(bed.rows, Math.round(1 - (pw + 2) * (1 - shown)), LANE_PIX - ph - (bed.float ? 1 : 0), bed.pal)
@@ -95,7 +96,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
   // The gauge at the right end shows how much context is left.
   if (typeof x.ctx === 'number') {
     const gauge = pack.gauge(x.ctx)
-    plot(gauge.rows, cols - gauge.rows[0].length - 1, LANE_PIX - gauge.rows.length, gauge.pal)
+    plot(gauge.rows, cols - (gauge.rows[0]?.length ?? 0) - 1, LANE_PIX - gauge.rows.length, gauge.pal)
   }
   // What the activity brings, beneath the hero as on the desktop: its stage
   // (in lane columns), something at its destination, and something ahead.
@@ -106,12 +107,15 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
   // from the mouse's tail, where the tail now hides under the sleeping body.
   // The brain never plans that; it can show for one repaint between the two
   // state writes at bedtime.
+  const hour = hourOf(x.hour ?? 12)
   const at = (x0: number, put = plot): CellsCtx => ({
     leg: m,
     hero: c,
     now,
     dir,
     scene: l.sceneId,
+    hour,
+    phase: phaseAt(hour),
     face,
     x: x0,
     ahead: (w, gap = 1) => (dir === 1 ? x0 + HERO_COLS + gap : x0 - w - gap),
@@ -123,19 +127,11 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     act.target?.cells(at(Math.round(m.to * span)))
     act.draw?.cells(at(cx))
   }
-  // The body follows the activity's track, if it has one; the bubble stays put.
-  let hx = cx
-  let hy = cy
-  if (busy && act?.arc?.length) {
-    const [dx, dy] = trackAt(act.arc, elapsed)
-    hx = Math.max(0, Math.min(span, cx + dir * Math.round(dx)))
-    hy = cy + Math.round(dy)
-  }
   const id = lookOf(pack, x.identity)
-  const dressed = pack.hero.dress(heroRows(pack, c, l, now), id.marking, x.hat ?? 'none')
-  plot(face(dressed), hx, hy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
-  // Over the hero, moving with its hops and track.
-  if (busy && act?.over) act.over.cells(at(hx, (rows, x0, y0, pal) => plot(rows, x0, y0 + hy, pal)))
+  const dressed = wear(pack.hero, heroRows(pack, c, l, now), id.marking, x.hat ?? 'none', l.posture === 'asleep')
+  plot(face(dressed), cx, cy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
+  // Over the hero, moving with its hops.
+  if (busy && act?.over) act.over.cells(at(cx, (rows, x0, y0, pal) => plot(rows, x0, y0 + cy, pal)))
 
   const grid = new Uint32Array(cols * LANE_ROWS * 3)
   for (let y = 0; y < LANE_ROWS; y++) {
@@ -144,7 +140,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
       const bottom = pixels[(y * 2 + 1) * cols + x]
       const cell =
         top === undefined && bottom === undefined ? [0x20, TERMINAL_DEFAULT, bg]
-        : top === undefined ? [0x2584, bottom!, bg]
+        : top === undefined ? [0x2584, bottom ?? bg, bg]
         : [0x2580, top, bottom ?? bg]
       grid.set(cell, (y * cols + x) * 3)
     }
@@ -155,9 +151,9 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
   }
 
   if (l.posture === 'asleep') {
-    const z = ['z', 'zZ', 'zZz', ' Zz', '  z'][Math.floor(now / 500) % 5]
+    const z = ['z', 'zZ', 'zZz', ' Zz', '  z'][Math.floor(now / 500) % 5] ?? 'z'
     const zx = dir === 1 || isInBed(c, m) ? cx + HERO_COLS : cx - 4
-    for (let i = 0; i < z.length; i++) put(zx + i, 1, z[i], QUIET_COLOR)
+    for (let i = 0; i < z.length; i++) put(zx + i, 1, z.charAt(i), QUIET_COLOR)
   }
 
   const line = l.posture === 'asleep' ? null : terminalLine(c, now)
@@ -182,7 +178,7 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     put(bx + w - 1, 2, isLeft ? '├' : '│', tint)
     put(isLeft ? bx + w : bx - 1, 2, '─', tint)
     for (let i = 0; i < w - 2; i++) put(bx + 1 + i, 2, ' ', tint)
-    for (let i = 0; i < text.length; i++) put(bx + 2 + i, 2, text[i], tint)
+    for (let i = 0; i < text.length; i++) put(bx + 2 + i, 2, text.charAt(i), tint)
   }
 
   return base64(new Uint8Array(grid.buffer))

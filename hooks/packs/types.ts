@@ -1,4 +1,4 @@
-import type { HeroState, Identity, Mood, Motion, Stats } from '../../types'
+import type { HeroState, Identity, Mood, Motion, Phase, Stats } from '../../types'
 
 // A pack is everything the lane draws and does, as data: the hero's sprites
 // and looks, its scenes, and its activities. The engine (hooks/engine) reads
@@ -18,10 +18,14 @@ export type Dir = 1 | -1
 /** A pose on the spot: one sprite, or several shown in turn (a swing, a chop). */
 export type Pose = {
   frames: [Rows, ...Rows[]]
-  /** desktop: seconds for one cycle of all its frames, each an equal share (default 1) */
-  period?: number
-  /** terminal: ms each frame shows (default 500) */
+  /** ms each frame shows (default 500); set this, and both surfaces keep step */
   tick?: number
+  /**
+   * desktop: seconds for one cycle of all its frames, each an equal share
+   * (default: frames x tick, in step with the terminal). Only the cat's
+   * older poses set it, to keep their drawings as they were.
+   */
+  period?: number
   /**
    * The eyes are already shut: no blinks, no happy squint. Desktop blinks lay
    * closed eyes over the FIRST frame's eyes for the whole pose, so a pose
@@ -36,18 +40,20 @@ export type Hero = {
   stride: number
   /** the stride while Claude is working */
   rush: number
-  /** the pose on the spot when the activity has none of its own */
-  sit: Pose
+  /** the pose on the spot, at rest, when the activity has none of its own */
+  idle: Pose
   /** asleep, eyes shut */
   asleep: Rows
-  /** shut eyes, for a blink or a happy squint */
-  closeEyes(rows: Rows): Rows
+  /** shut eyes, for a blink or a happy squint (default: engine/draw.ts closeEyes) */
+  closeEyes?(rows: Rows): Rows
   /**
-   * The rows wearing a marking and a hat, padded HAT_PAD rows on top. The
-   * marking is always 'none' or one of Pack.markings (the engine maps a
-   * marking rolled under another pack onto one of this pack's own).
+   * Puts the marking and the hat on. `rows` is the sprite with HAT_PAD blank
+   * rows already added on top by the engine, room for the hat; return rows
+   * of the same size. The marking is always 'none' or one of Pack.markings
+   * (the engine maps a marking rolled under another pack onto one of this
+   * pack's own). `asleep`: these are the Hero.asleep rows.
    */
-  dress(rows: Rows, marking: string, hat: string): Rows
+  dress(rows: Rows, marking: string, hat: string, asleep: boolean): Rows
   /** the hats' colours, laid over the coat */
   hatPal: Palette
 }
@@ -71,6 +77,10 @@ type Ctx = {
   now: number
   dir: Dir
   scene: string
+  /** the local hour (0..23) the lane is drawn at */
+  hour: number
+  /** its time of day, for anything drawn differently after dark */
+  phase: Phase
   /** left-facing rows turned the way the hero faces */
   face(rows: Rows): Rows
 }
@@ -120,16 +130,6 @@ export type Draw = {
   ownEdges?: boolean
 }
 
-/**
- * The hero's body moved off its spot while a leg lasts: a jump attack's arc,
- * a knockback. Keyframes of [ms into the leg, dx, dy] in sprite px (dx the
- * way the hero faces, dy down), in time order, eased linearly from 0, 0 at
- * the leg's start through each key, and held at the last until the leg
- * ends; then the body is back on its spot, on both surfaces. Two keys at
- * the same ms make a jump.
- */
-export type Track = [number, number, number][]
-
 /** How a leg moves. Absent: wander to a random spot. */
 export type Move =
   /** stay put for a time in ms (a range is rolled); faceRoom turns to the wider side */
@@ -155,8 +155,6 @@ export type Activity = {
   pose?: Pose | 'asleep' | ((hero: HeroState) => Pose | undefined)
   /** a hop on every step, or a pounce as a leg on the spot starts */
   leap?: 'hop' | 'pounce'
-  /** the hero's body (and its `over` layer) follows this track while the leg lasts, on top of any leap */
-  arc?: Track
   /** the hero's mood while it lasts, instead of idle (or tired) */
   mood?: Mood
   /** the chance a leg of it ends in a hit (Motion.hit), whether it stays or moves: a catch, a strike that lands */
@@ -181,28 +179,34 @@ export type Activity = {
   /**
    * ahead of the hero, beneath it (desktop: always; terminal: while the leg
    * lasts). The desktop drawing is made once per leg and stays up until the
-   * next leg replaces it, up to a brain tick (1 s) after this one ends: an
-   * animation meant to be gone by then should end itself (fill="remove", or
-   * end on an invisible frame) rather than freeze.
+   * next leg replaces it, which the brain plans the moment this one ends.
+   * An animation meant to be gone by the leg's end should end itself
+   * (fill="remove", or end on an invisible frame) rather than freeze.
    */
   draw?: Draw
-  /** on top of the hero, in its frame and moving with its hops and arc: a swung tool, say (lasts as `draw` does) */
+  /** on top of the hero, in its frame and moving with its hops: a swung tool, say (lasts as `draw` does) */
   over?: Draw
 }
 
-export type HatDef = { id: string; label: string; need(s: Stats): boolean; hint: string }
+/** A pack's hat for one unlock tier: its id (the key its dress() draws) and the name it goes by. */
+export type HatArt = { id: string; label: string }
+/** A hat with what unlocks it, from the engine's tiers (engine/hats.ts). */
+export type HatDef = HatArt & { need(s: Stats): boolean; hint: string }
 
 export type Pack = {
   id: string
   label: string
   /** what the hero is called in messages */
   noun: string
+  /** what the settings button calls a coat: 'Coat', 'Outfit' */
+  coatLabel: string
   hero: Hero
   /** palettes by name */
   coats: Record<string, Palette>
   scenes: Record<string, Scene>
   markings: string[]
-  hats: HatDef[]
+  /** one hat for each of the engine's unlock tiers, in tier order (engine/hats.ts) */
+  hats: HatArt[]
   defaults: { coat: string; scene: string }
   /**
    * In order: the weighted pick walks them in this order. 'bed' and 'perch'

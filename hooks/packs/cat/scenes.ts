@@ -1,15 +1,19 @@
 import { LANE_H as H, TERMINAL_DEFAULT } from '../../engine/geometry'
+import { phaseAt } from '../../engine/time'
 import type { Scene } from '../types'
 import { BOWL, RIVER, TANK } from './critters'
 import type { Spot } from './critters'
 
 // Desktop: a backdrop drawn behind the cat, in percent so it fills any width.
-// Time of day: a tint over the sky, by local hour.
+// Time of day: a tint over the sky, by local hour (engine/time.ts).
+const SKIES = {
+  night: { color: '#1b2547', tint: 0.45, isNight: true },
+  dawn: { color: '#f6b4a5', tint: 0.14, isNight: false },
+  dusk: { color: '#f39a5b', tint: 0.14, isNight: false },
+  day: { color: '#9fd3ff', tint: 0, isNight: false },
+}
 function skyAt(hour: number): { color: string; tint: number; isNight: boolean } {
-  if (hour >= 21 || hour < 5) return { color: '#1b2547', tint: 0.45, isNight: true }
-  if (hour < 7) return { color: '#f6b4a5', tint: 0.14, isNight: false }
-  if (hour >= 18) return { color: '#f39a5b', tint: 0.14, isNight: false }
-  return { color: '#9fd3ff', tint: 0, isNight: false }
+  return SKIES[phaseAt(hour)]
 }
 
 function starsSvg(spots: number[][], opacity: number): string {

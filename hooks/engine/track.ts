@@ -63,14 +63,15 @@ export type Place = {
   show?: [number, number]
   /**
    * Desktop: hold the last frame after the leg ends, until the next leg
-   * replaces the drawing (up to a brain tick), instead of going with the leg.
-   * A redraw made after the leg ended shows nothing either way, and the
-   * terminal draws no layer once its leg is over.
+   * replaces the drawing, instead of going with the leg. A redraw made after
+   * the leg ended shows nothing either way, and the terminal draws no layer
+   * once its leg is over; the brain plans the next leg the moment one ends
+   * (register.tsx), so neither surface shows a gap between chained legs.
    */
   linger?: boolean
   /** turn the rows the way the hero faces (default true); the place mirrors either way */
   mirror?: boolean
-  /** for 'ahead' and 'hero': beneath the hero ('draw') or on top of it, moving with its hops and arc ('over') */
+  /** for 'ahead' and 'hero': beneath the hero ('draw') or on top of it, moving with its hops ('over') */
   layer?: 'draw' | 'over'
   /** draw it only on legs this says yes to: a drop on a leg that hits, say */
   only?(leg: Motion): boolean
@@ -93,6 +94,7 @@ export type Sprite = Place & {
 export type TrackDraw = Draw & { layer: LayerName }
 
 type K = [number, number, number, number]
+const REST: K = [0, 0, 0, 1]
 
 const fmt = (n: number) => String(Number(n.toFixed(3)))
 const mod = (a: number, n: number) => ((a % n) + n) % n
@@ -107,8 +109,8 @@ function framesOf(f: Rows | Rows[]): Rows[] {
 function norm(keys: Key[] | undefined): K[] {
   const ks: K[] = (keys?.length ? keys : [[0, 0, 0, 1] as Key]).map(([t, dx, dy, op = 1]) => [clamp01(t), dx, dy, clamp01(op)])
   ks.sort((a, b) => a[0] - b[0])
-  const first = ks[0]
-  const last = ks[ks.length - 1]
+  const first = ks[0] ?? REST
+  const last = ks[ks.length - 1] ?? first
   if (first[0] > 0) ks.unshift([0, first[1], first[2], first[3]])
   if (last[0] < 1) ks.push([1, last[1], last[2], last[3]])
   return ks
@@ -116,8 +118,8 @@ function norm(keys: Key[] | undefined): K[] {
 
 function sampleK(ks: K[], t: number): [number, number, number] {
   let i = 0
-  while (i + 1 < ks.length && ks[i + 1][0] <= t) i++
-  const a = ks[i]
+  while (i + 1 < ks.length && (ks[i + 1]?.[0] ?? Infinity) <= t) i++
+  const a = ks[i] ?? REST
   const b = ks[i + 1]
   if (!b) return [a[1], a[2], a[3]]
   const k = b[0] > a[0] ? (t - a[0]) / (b[0] - a[0]) : 1
@@ -196,7 +198,7 @@ function shell(p: Place, ctx: SvgCtx, inner: string): string {
 // once and held on the last. A held run is timed over the whole leg (see
 // legTimed), so a redraw after it finished still shows the last frame.
 function flip(list: string[], tick: number, start: number, ctx: SvgCtx, hold: boolean): string {
-  if (list.length === 1) return list[0]
+  if (list.length <= 1) return list[0] ?? ''
   const n = list.length
   const dur = legMs(ctx.leg)
   const anim = (i: number) => {
@@ -244,20 +246,21 @@ function spriteSvg(s: Sprite, ctx: SvgCtx): string {
 
   const timing = s.loop ? `dur="${Math.max(1, Math.round(s.loop))}ms" begin="${at(start)}" repeatCount="indefinite"` : legTimed(ctx)
   const keyTimes = `keyTimes="${ks.map(k => fmt(k[0])).join(';')}"`
-  const moves = ks.some(k => k[1] !== ks[0][1] || k[2] !== ks[0][2])
-  const fades = ks.some(k => k[3] !== ks[0][3])
+  const k0 = ks[0] ?? REST
+  const moves = ks.some(k => k[1] !== k0[1] || k[2] !== k0[2])
+  const fades = ks.some(k => k[3] !== k0[3])
   let attrs = ''
   let anims = ''
   if (moves) {
     const values = ks.map(k => `${fmt(k[1] * PX)} ${fmt(k[2] * PX)}`).join(';')
     anims += `<animateTransform attributeName="transform" type="translate" values="${values}" ${keyTimes} ${timing}/>`
-  } else if (ks[0][1] || ks[0][2]) {
-    attrs += ` transform="translate(${fmt(ks[0][1] * PX)} ${fmt(ks[0][2] * PX)})"`
+  } else if (k0[1] || k0[2]) {
+    attrs += ` transform="translate(${fmt(k0[1] * PX)} ${fmt(k0[2] * PX)})"`
   }
   if (fades) {
     anims += `<animate attributeName="opacity" values="${ks.map(k => fmt(k[3])).join(';')}" ${keyTimes} ${timing}/>`
-  } else if (ks[0][3] < 1) {
-    attrs += ` opacity="${fmt(ks[0][3])}"`
+  } else if (k0[3] < 1) {
+    attrs += ` opacity="${fmt(k0[3])}"`
   }
   return shell(s, ctx, `<g${attrs}>${anims}${body}</g>`)
 }
@@ -297,6 +300,7 @@ function spriteCells(s: Sprite, ctx: CellsCtx): void {
   const tick = Math.max(1, Math.round(s.tick ?? 500))
   const i = Math.floor(shown / tick)
   const rows = frames[s.hold ? Math.max(0, Math.min(frames.length - 1, i)) : mod(i, frames.length)]
+  if (!rows) return
   put(s, ctx, rows, baseX(s, widthOf(rows)) + (s.x ?? 0) + Math.round(dx), (s.y ?? GROUND - rows.length) + Math.round(dy))
 }
 
@@ -338,14 +342,30 @@ export function layers(...tracks: TrackDraw[]): Pick<Activity, LayerName> {
   return out
 }
 
+/**
+ * A layer whose drawings are picked afresh for each leg: a block, wall or foe
+ * that depends on the leg, its scene or the hour. `choose` answers drawings
+ * built up front (never new ones per call), and those of them in `layer` are
+ * drawn, the first beneath; nothing when it answers none.
+ */
+export function perLeg(layer: LayerName, choose: (ctx: SvgCtx | CellsCtx) => TrackDraw | TrackDraw[] | null | undefined): TrackDraw {
+  const mine = (ctx: SvgCtx | CellsCtx): TrackDraw[] => {
+    const got = choose(ctx)
+    if (!got) return []
+    return (Array.isArray(got) ? got : [got]).filter(d => d.layer === layer)
+  }
+  return {
+    layer,
+    svg: ctx => mine(ctx).map(d => d.svg(ctx)).join(''),
+    cells: ctx => {
+      for (const d of mine(ctx)) d.cells(ctx)
+    },
+  }
+}
+
 /** Not on screen until `t` of the leg; its frames and any loop start there. */
 export function appear<T extends Place>(t: number, p: T): T {
   return { ...p, show: [t, p.show?.[1] ?? 1] }
-}
-
-/** Gone from `t` of the leg on. */
-export function vanish<T extends Place>(t: number, p: T): T {
-  return { ...p, show: [p.show?.[0] ?? 0, t] }
 }
 
 export type Pop = Omit<Sprite, 'keys' | 'loop' | 'show'> & {
@@ -422,7 +442,8 @@ export function fallOver(f: Fall): TrackDraw {
   const px = w - pxLeft // facing right
   const angle = f.angle ?? 90
   const rad = (angle * Math.PI) / 180
-  const lowest = Math.max(...[[0, 0], [w, 0], [0, h], [w, h]].map(([cx, cy]) => py + (cx - px) * Math.sin(rad) + (cy - py) * Math.cos(rad)))
+  const corners: [number, number][] = [[0, 0], [w, 0], [0, h], [w, h]]
+  const lowest = Math.max(...corners.map(([cx, cy]) => py + (cx - px) * Math.sin(rad) + (cy - py) * Math.cos(rad)))
   const lift = f.lift ?? Math.max(0, Math.round(lowest - h))
   const from = clamp01(f.from)
   const to = Math.max(from, clamp01(f.to))

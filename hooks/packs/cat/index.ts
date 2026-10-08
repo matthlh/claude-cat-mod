@@ -18,16 +18,17 @@ export const cat: Pack = {
   id: 'cat',
   label: 'Cat',
   noun: 'cat',
+  coatLabel: 'Coat',
   hero: HERO,
   coats: COATS,
   scenes: SCENES,
   markings: MARKINGS,
-  // Hats, and what unlocks them.
+  // One hat for each of the engine's unlock tiers (engine/hats.ts).
   hats: [
-    { id: 'party', label: 'Party hat', need: s => s.turns >= 10, hint: '10 finished tasks' },
-    { id: 'beanie', label: 'Beanie', need: s => s.tools >= 100, hint: '100 tool calls' },
-    { id: 'crown', label: 'Crown', need: s => s.turns >= 150, hint: '150 finished tasks' },
-    { id: 'wizard', label: 'Wizard hat', need: s => s.tools >= 500, hint: '500 tool calls' },
+    { id: 'party', label: 'Party hat' },
+    { id: 'beanie', label: 'Beanie' },
+    { id: 'crown', label: 'Crown' },
+    { id: 'wizard', label: 'Wizard hat' },
   ],
   defaults: { coat: 'orange', scene: 'clear' },
   activities: ACTIVITIES,

@@ -19,6 +19,9 @@ export type Cat = HeroState
 
 export type ToolProp = 'read' | 'edit' | 'bash' | 'search'
 
+/** The time of day: night 21:00-4:59, dawn 5-6, dusk 18-20, day the rest (hooks/engine/time.ts). */
+export type Phase = 'night' | 'dawn' | 'day' | 'dusk'
+
 /**
  * One leg of the hero's walk: from one spot to another (0 = left end of the
  * lane, 1 = right end), starting at t0 and taking dur ms; from === to is a
@@ -35,6 +38,12 @@ export type Motion = {
   chain?: number
   /** whether this leg ends in a hit: rolled from the activity's `hit` chance, on any leg */
   hit?: boolean
+  /**
+   * The time of day this run of legs began in: set when a leg is picked
+   * fresh, and carried into its follow-ups and repeats, so a sequence (a
+   * fight and its finish) keeps one time of day even across 21:00.
+   */
+  phase?: Phase
 }
 
 /**
@@ -72,6 +81,13 @@ export type Stats = {
   tools: number
 }
 
+/** One pack's look, remembered while another pack is on. */
+export type Look = {
+  coat: Coat
+  scene: Scene
+  hat: Hat
+}
+
 export type Prefs = {
   /** absent in prefs saved before packs: loads as the 'cat' pack */
   pack: PackId
@@ -81,6 +97,8 @@ export type Prefs = {
   popups: boolean
   showUsage: boolean
   hat: Hat
+  /** each other pack's look, by pack id, as it was when the hero left it (absent until a switch) */
+  looks?: Record<PackId, Look>
 }
 
 declare module 'claude-code' {

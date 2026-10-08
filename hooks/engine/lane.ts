@@ -1,7 +1,7 @@
 import type { HeroState, Identity, Mood, Motion } from '../../types'
-import type { Activity, Dir, Pack, Pose, Scene } from '../packs/types'
-import { clamp01 } from './draw'
-import { SLIDE_MS } from './geometry'
+import type { Activity, Dir, Hero, Pack, Palette, Pose, Rows, Scene } from '../packs/types'
+import { clamp01, closeEyes } from './draw'
+import { HAT_PAD, HERO_COLS, SLIDE_MS } from './geometry'
 import { IN_BED, RESERVED_ACTIVITIES, TO_BED, isWalking } from './motion'
 
 // What both surfaces need to know about the lane at one moment.
@@ -39,7 +39,33 @@ export function lookOf(pack: Pack, id: Identity | undefined): Identity {
   if (markings.length === 0) return { ...who, marking: 'none' }
   let h = 0
   for (let i = 0; i < who.marking.length; i++) h = (h * 31 + who.marking.charCodeAt(i)) >>> 0
-  return { ...who, marking: markings[h % markings.length] }
+  return { ...who, marking: markings[h % markings.length] ?? 'none' }
+}
+
+// The hero's rows dressed: HAT_PAD blank rows on top, the room a hat sits
+// in (both surfaces draw the result HAT_PAD rows higher), then the pack puts
+// on the marking and the hat.
+export function wear(hero: Hero, rows: Rows, marking: string, hat: string, asleep: boolean): Rows {
+  const pad: Rows = Array.from({ length: HAT_PAD }, () => '.'.repeat(HERO_COLS))
+  return hero.dress([...pad, ...rows], marking, hat, asleep)
+}
+
+// Shut eyes, the pack's own way or the engine's.
+export function shut(hero: Hero, rows: Rows): Rows {
+  return (hero.closeEyes ?? closeEyes)(rows)
+}
+
+// A pack's coat by id, or its default one.
+export function coatOf(pack: Pack, id?: string): Palette {
+  return (id !== undefined && Object.hasOwn(pack.coats, id) && pack.coats[id]) || pack.coats[pack.defaults.coat] || {}
+}
+
+// A pack's scene by id, or its default one.
+export function sceneOf(pack: Pack, sceneId: string): { id: string; scene: Scene } {
+  const id = Object.hasOwn(pack.scenes, sceneId) ? sceneId : pack.defaults.scene
+  const scene = pack.scenes[id]
+  if (!scene) throw new Error(`pack '${pack.id}' has no scene '${id}'`)
+  return { id, scene }
 }
 
 export function lane(pack: Pack, c: HeroState, m: Motion, now: number, sceneId: string): Lane {
@@ -47,7 +73,7 @@ export function lane(pack: Pack, c: HeroState, m: Motion, now: number, sceneId: 
   const walking = isWalking(m, now)
   const busy = now < m.t0 + m.dur
   const own = busy ? (typeof act?.pose === 'function' ? act.pose(c) : act?.pose) : undefined
-  const id = Object.hasOwn(pack.scenes, sceneId) ? sceneId : pack.defaults.scene
+  const { id, scene } = sceneOf(pack, sceneId)
   return {
     act,
     walking,
@@ -56,7 +82,7 @@ export function lane(pack: Pack, c: HeroState, m: Motion, now: number, sceneId: 
     posture: walking ? 'walk' : c.mood === 'sleep' || own === 'asleep' ? 'asleep' : 'sit',
     pose: own === 'asleep' ? undefined : own,
     sceneId: id,
-    scene: pack.scenes[id],
+    scene,
   }
 }
 

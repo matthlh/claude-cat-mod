@@ -1,4 +1,4 @@
-import type { Mood, Motion, Speed } from '../../types'
+import type { Mood, Motion, Phase, Speed } from '../../types'
 import type { Dir, Move, Pack } from '../packs/types'
 import { clamp01 } from './draw'
 import { activityOf, hasCompanion } from './lane'
@@ -12,7 +12,8 @@ export function strollPace(speed: Speed): number {
   return PACE[speed]
 }
 
-function roll([lo, hi]: [number, number]): number {
+// A random value from lo to hi.
+function between([lo, hi]: [number, number]): number {
   return lo + Math.random() * (hi - lo)
 }
 
@@ -27,26 +28,37 @@ function wander(from: number): number {
 function destination(move: Exclude<Move, { stay: unknown }> | undefined, from: number): number {
   if (!move) return wander(from)
   if ('spot' in move) return move.spot
-  if ('near' in move) return from < 0.5 ? from + roll(move.near) : from - roll(move.near)
+  if ('near' in move) return from < 0.5 ? from + between(move.near) : from - between(move.near)
   // A short dash this way or that, turning back at the edges.
   const sign = Math.random() < 0.5 ? 1 : -1
-  const to = from + sign * roll(move.zip)
-  return to < 0.05 || to > 0.95 ? from - sign * roll(move.zip) : to
+  const to = from + sign * between(move.zip)
+  return to < 0.05 || to > 0.95 ? from - sign * between(move.zip) : to
 }
 
 // A new leg: what the hero does next, where to, and for how long; and which
-// way it then faces, when that changes.
-export function planLeg(pack: Pack, now: number, mood: Mood, from: number, activity: string, speed: Speed, chain?: number): { leg: Motion; dir?: Dir } {
+// way it then faces, when that changes. `phase`, when given, is the time of
+// day the leg belongs to (Motion.phase).
+export function planLeg(
+  pack: Pack,
+  now: number,
+  mood: Mood,
+  from: number,
+  activity: string,
+  speed: Speed,
+  chain?: number,
+  phase?: Phase,
+): { leg: Motion; dir?: Dir } {
   const a = activityOf(pack, activity)
   const move = a?.move
   // Whether it lands, on any leg: rolled last, so an activity without a hit
   // chance draws no extra dice.
   const landed = () => (a?.hit === undefined ? undefined : Math.random() < a.hit)
   if (move && 'stay' in move) {
-    const dur = typeof move.stay === 'number' ? move.stay : roll(move.stay)
+    const dur = typeof move.stay === 'number' ? move.stay : between(move.stay)
     const hit = landed()
     const leg: Motion = { from, to: from, t0: now, dur, activity, hit }
     if (chain !== undefined) leg.chain = chain
+    if (phase !== undefined) leg.phase = phase
     return { leg, dir: move.faceRoom ? (from < 0.5 ? 1 : -1) : undefined }
   }
   const base = mood === 'working' ? RUN_PACE[speed] : mood === 'tired' ? TIRED_PACE : PACE[speed]
@@ -57,12 +69,14 @@ export function planLeg(pack: Pack, now: number, mood: Mood, from: number, activ
   const dur = Math.max(800, (Math.abs(to - from) / pace) * 1000)
   const hit = landed()
   const leg: Motion = hit === undefined ? { from, to, t0: now, dur, activity, chain } : { from, to, t0: now, dur, activity, chain, hit }
+  if (phase !== undefined) leg.phase = phase
   return { leg, dir: to > from ? 1 : -1 }
 }
 
 type Column = 'day' | 'night' | 'tired'
 
-function pick(pack: Pack, column: Column): string {
+// A weighted random activity for this column of weights.
+function weightedPick(pack: Pack, column: Column): string {
   const options = Object.entries(pack.activities)
     .map(([id, a]) => [id, a.weight?.[column] ?? 0] as const)
     .filter(([, w]) => w > 0)
@@ -73,13 +87,13 @@ function pick(pack: Pack, column: Column): string {
     left -= w
     if (left <= 0) return id
   }
-  return options[0][0]
+  return options[0]?.[0] ?? pack.roles.stroll
 }
 
 type Choice = { activity: string; chain?: number; line?: string; how: 'then' | 'hunger' | 'repeat' | 'pick' }
 
 function fresh(pack: Pack, column: Column): Choice {
-  const activity = pick(pack, column)
+  const activity = weightedPick(pack, column)
   const repeat = activityOf(pack, activity)?.repeat
   return { activity, chain: repeat && repeat[0] + Math.floor(Math.random() * (repeat[1] - repeat[0] + 1)), how: 'pick' }
 }
@@ -91,7 +105,9 @@ export type Next = {
   line: string | null
   cues: [number, string][]
   /** the hunger line was said */
-  fed: boolean
+  saidHungry: boolean
+  /** it carries on from the leg before (a follow-up or a repeat), so it keeps that leg's Motion.phase */
+  carriesOn: boolean
 }
 
 // What follows an idle leg. An activity may lead into another (its `then`)
@@ -114,7 +130,7 @@ export function nextLeg(pack: Pack, prev: Motion, s: { isHungry: boolean; isLow:
   // Now and then, say something about it; always, right after a follow-up.
   let line = next.line ?? null
   if (!line && a?.lines && next.how !== 'repeat' && (next.how === 'then' || (!s.isSaying && Math.random() < 0.5))) {
-    line = a.lines[Math.floor(Math.random() * a.lines.length)]
+    line = a.lines[Math.floor(Math.random() * a.lines.length)] ?? null
   }
   return {
     activity: next.activity,
@@ -122,6 +138,7 @@ export function nextLeg(pack: Pack, prev: Motion, s: { isHungry: boolean; isLow:
     mood: a?.mood ?? (s.isLow ? 'tired' : 'idle'),
     line,
     cues: a?.cues ?? [],
-    fed: next.how === 'hunger',
+    saidHungry: next.how === 'hunger',
+    carriesOn: next.how === 'then' || next.how === 'repeat',
   }
 }

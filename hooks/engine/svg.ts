@@ -1,10 +1,13 @@
 import type { HeroState, Motion } from '../../types'
 import type { Bed, Draw, Pack, Palette, Rows, SvgCtx } from '../packs/types'
-import { clamp01, cycle, faceRight, frames, hex, rects } from './draw'
+import { clamp01, cycleFrames, faceRight, frames, hex, posePeriod, rects } from './draw'
 import { BED_X, HAT_PAD, HEADROOM, HERO_H, HERO_W, LANE_H, MAX_X, PX, SLIDE_MS } from './geometry'
-import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR } from './lane'
+import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
 import type { Extras, Lane } from './lane'
-import { posAt, trackKeys } from './motion'
+import { posAt } from './motion'
+import { hourOf, phaseAt } from './time'
+
+const widthOf = (rows: Rows) => rows[0]?.length ?? 0
 
 // ── Desktop: one self-animating SVG for the whole lane ──────────────────
 
@@ -67,7 +70,7 @@ const BOB = '<animateTransform attributeName="transform" type="translate" values
 function bedSvg(c: HeroState, m: Motion, now: number, bed: Bed): string {
   const shown = bedShown(c, m, now)
   if (shown === null) return ''
-  const w = bed.rows[0].length * PX
+  const w = widthOf(bed.rows) * PX
   const y = HEADROOM + HERO_H - bed.rows.length * PX - bed.float
   const away = -(BED_X + w + 4)
   const isLeaving = c.mood !== 'sleep'
@@ -81,30 +84,31 @@ function bedSvg(c: HeroState, m: Motion, now: number, bed: Bed): string {
 // The hero's body, dressed and facing the way it's going, with blinks.
 function heroSvg(pack: Pack, c: HeroState, l: Lane, pal: Palette, marking: string, hat: string, remaining: number): string {
   const { hero } = pack
+  const asleep = l.posture === 'asleep'
   const dressed = (rows: Rows) => {
-    const d = hero.dress(rows, marking, hat)
+    const d = wear(hero, rows, marking, hat, asleep)
     return l.dir === 1 ? faceRight(d) : d
   }
   const draw = (rows: Rows) => rects(dressed(rows), pal)
-  const eyes = (rows: Rows) => (isHappy(c.mood) ? hero.closeEyes(rows) : rows)
+  const eyes = (rows: Rows) => (isHappy(c.mood) ? shut(hero, rows) : rows)
 
   let body: string
-  if (l.posture === 'asleep') {
+  if (asleep) {
     body = draw(hero.asleep)
   } else if (l.posture === 'walk') {
     const stride = c.mood === 'working' ? hero.rush : l.act?.stride ?? hero.stride
     body = frames(draw(eyes(hero.walk[0])), draw(eyes(hero.walk[1])), (stride * 2) / 1000, remaining)
   } else {
-    const p = l.pose ?? hero.sit
+    const p = l.pose ?? hero.idle
     const look = p.shut ? (rows: Rows) => rows : eyes
     const shown = p.frames.map(f => draw(look(f)))
-    body = shown.length > 1 ? cycle(shown, p.period ?? 1) : shown[0]
+    body = shown.length > 1 ? cycleFrames(shown, posePeriod(p)) : shown.join('')
   }
   // Blinks: closed-eye pixels laid over the open eyes of the first frame
   // for a moment (see Pose.shut for poses whose head moves).
-  if (l.posture !== 'asleep' && !isHappy(c.mood) && !l.pose?.shut) {
-    const open = l.posture === 'walk' ? hero.walk[0] : (l.pose ?? hero.sit).frames[0]
-    body += `<g opacity="0">${rects(dressed(hero.closeEyes(open)), pal, dressed(open))}<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.95;0.98" dur="4s" calcMode="discrete" repeatCount="indefinite"/></g>`
+  if (!asleep && !isHappy(c.mood) && !l.pose?.shut) {
+    const open = l.posture === 'walk' ? hero.walk[0] : (l.pose ?? hero.idle).frames[0]
+    body += `<g opacity="0">${rects(dressed(shut(hero, open)), pal, dressed(open))}<animate attributeName="opacity" values="0;1;0" keyTimes="0;0.95;0.98" dur="4s" calcMode="discrete" repeatCount="indefinite"/></g>`
   }
   return body
 }
@@ -125,12 +129,15 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
   const remaining = walking ? m.t0 + m.dur - now : 0
   const pct = (p: number) => `${(clamp01(p) * MAX_X).toFixed(3)}%`
   const at = (ms: number) => `${Math.round(m.t0 + ms - now)}ms`
+  const hour = hourOf(x.hour ?? 12)
   const ctx: SvgCtx = {
     leg: m,
     hero: c,
     now,
     dir,
     scene: l.sceneId,
+    hour,
+    phase: phaseAt(hour),
     face: rows => (dir === 1 ? faceRight(rows) : rows),
     PX,
     walking,
@@ -168,13 +175,6 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
   // A layer with nothing for the desktop (a terminal-only one) adds nothing.
   const overSvg = act?.over ? act.over.svg(ctx) : ''
   const over = overSvg ? `<g transform="translate(0 ${HAT_PAD * PX})">${overSvg}</g>` : ''
-
-  // The activity's own track for the body, as one keyframed move over the leg
-  // that lets go when the leg ends.
-  const keys = busy && act?.arc?.length ? trackKeys(act.arc, m.dur) : null
-  const arc = keys
-    ? `<animateTransform attributeName="transform" type="translate" values="${keys.map(([, dx, dy]) => `${dir * dx * PX} ${dy * PX}`).join(';')}" keyTimes="${keys.map(([k]) => Number(k.toFixed(4))).join(';')}" dur="${Math.round(m.dur)}ms" begin="${at(0)}"/>`
-    : ''
   const lifted = `<g transform="translate(0 ${-HAT_PAD * PX})"><g>${bounce}${body}${over}</g></g>`
 
   // In bed: shifted onto it and lifted, after a little hop up.
@@ -182,7 +182,7 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
   let floatX = 0
   if (isInBed(c, m)) {
     const p = scene.bed
-    const dx = BED_X + (p.rows[0].length * PX - HERO_W) / 2
+    const dx = BED_X + (widthOf(p.rows) * PX - HERO_W) / 2
     const lift = (p.rows.length - 1) * PX + p.float
     const hopUp = `<animateTransform attributeName="transform" type="translate" values="${-dx} ${lift};${-dx / 2} ${lift / 2 - 8};0 0" dur="0.35s" begin="${at(0)}" fill="freeze"/>`
     bedOpen = `<g transform="translate(${dx} ${-lift})"><g>${p.float ? BOB : ''}<g>${hopUp}`
@@ -194,14 +194,14 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${LANE_H}" overflow="visible" style="background:transparent">
   <style>:root{color-scheme:light dark;background:transparent}</style>
   ${scene.backdrop(x.hour ?? 12)}
-  ${gauge ? `<svg x="100%" y="${HEADROOM}" overflow="visible"><g shape-rendering="crispEdges" transform="translate(${-gauge.rows[0].length * PX - 8} ${HERO_H - gauge.rows.length * PX})">${rects(gauge.rows, gauge.pal)}</g></svg>` : ''}
+  ${gauge ? `<svg x="100%" y="${HEADROOM}" overflow="visible"><g shape-rendering="crispEdges" transform="translate(${-widthOf(gauge.rows) * PX - 8} ${HERO_H - gauge.rows.length * PX})">${rects(gauge.rows, gauge.pal)}</g></svg>` : ''}
   ${bedSvg(c, m, now, scene.bed)}
   ${stage}${target}
   <svg x="${pct(cur)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${glide}
     ${bedOpen}
     <g shape-rendering="crispEdges">
       ${act?.draw?.svg(ctx) ?? ''}
-      ${arc ? `<g>${arc}${lifted}</g>` : lifted}
+      ${lifted}
     </g>
     ${floatX ? '' : floaters(c, isNapping)}
     ${id.shiny ? SHINY : ''}
