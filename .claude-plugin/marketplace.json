@@ -1,0 +1,6 @@
+{
+  "name": "matthlh",
+  "owner": { "name": "matthlh" },
+  "description": "Claude Code mods by matthlh",
+  "plugins": [{ "name": "pixel-cat", "source": "./" }]
+}

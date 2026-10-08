@@ -51,19 +51,35 @@ In the Claude desktop app the whole lane is one SVG that animates itself (smooth
 
 ## Install
 
-You need a Claude Code version that supports mods (October 2026 or later).
+You need a Claude Code version that supports mods (October 2026 or later). The same steps work on macOS, Linux and Windows. At the Claude Code prompt, type:
+
+```
+/plugin install pixel-cat --marketplace matthlh/claude-cat-mod
+```
+
+Answer `y` to add the marketplace, then press Enter to install it for your user. The cat shows up right away, and in every new session after that, desktop app included.
+
+Or from a shell:
+
+```bash
+claude plugin marketplace add matthlh/claude-cat-mod
+claude plugin install pixel-cat@matthlh
+```
+
+Update with `claude plugin update pixel-cat@matthlh`, remove with `claude plugin uninstall pixel-cat@matthlh`.
+
+**No cat?** Mods are still rolling out. Add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block of `~/.claude/settings.json` and start a new session.
+
+### From a clone
+
+To change the cat, run your own copy instead:
 
 ```bash
 git clone https://github.com/matthlh/claude-cat-mod ~/.claude/mods/pixel-cat
-```
-
-**For one session:**
-
-```bash
 claude --plugin-dir ~/.claude/mods/pixel-cat
 ```
 
-**For every session**, in every project and in the desktop app, add this to `~/.claude/settings.json` (merge it into the `env` block if you already have one):
+To load the clone in every session, including the desktop app, put its full path in the `env` block of `~/.claude/settings.json`:
 
 ```json
 {
@@ -74,12 +90,13 @@ claude --plugin-dir ~/.claude/mods/pixel-cat
 }
 ```
 
-On Linux the path is `/home/<you>/.claude/mods/pixel-cat`.
+| OS | Path | Separator for several folders |
+| --- | --- | --- |
+| macOS | `/Users/<you>/.claude/mods/pixel-cat` | `:` |
+| Linux | `/home/<you>/.claude/mods/pixel-cat` | `:` |
+| Windows | `C:\\Users\\<you>\\.claude\\mods\\pixel-cat` (JSON needs the doubled `\\`) | `;` |
 
-- `CLAUDE_CODE_PLUGIN_DIRS` tells Claude Code where the mod is. It takes absolute paths only: `~` is not expanded, so `~/.claude/mods/pixel-cat` won't load. Separate several folders with `:`.
-- `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` turns mods on. They're still rolling out, so without it a session may load the mod's files but not run it.
-
-Then start a new session. Sessions that were already open when you changed the settings won't pick it up until they restart (in the desktop app, start a new chat or quit and reopen the app).
+Write the full path. Older versions don't expand `~` here, so `~/.claude/mods/pixel-cat` silently loads nothing. Sessions already open when you change settings pick it up only after a restart.
 
 ## Customize
 
