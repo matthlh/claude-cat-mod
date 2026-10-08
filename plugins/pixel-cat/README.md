@@ -1,4 +1,4 @@
-# Claude Cat Mod 🐱
+# Pixel Cat 🐱
 
 A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/claude-code) prompt. It wanders around, watches your usage limits, and tells you when Claude finishes.
 
@@ -51,52 +51,34 @@ In the Claude desktop app the whole lane is one SVG that animates itself (smooth
 
 ## Install
 
-You need a Claude Code version that supports mods (October 2026 or later). The same steps work on macOS, Linux and Windows. At the Claude Code prompt, type:
+Pixel Cat ships from the [matthlh/claude-mods](https://github.com/matthlh/claude-mods) marketplace, together with [Token Tycoon](../token-tycoon) and [Purple Dark](../purple-dark). You need a Claude Code version that supports mods (October 2026 or later); the same steps work on macOS, Linux and Windows. At the Claude Code prompt, type:
 
 ```
-/plugin install pixel-cat --marketplace matthlh/claude-cat-mod
+/plugin marketplace add matthlh/claude-mods
+/plugin install pixel-cat@matthlh
 ```
 
-Answer `y` to add the marketplace, then press Enter to install it for your user. The cat shows up right away, and in every new session after that, desktop app included.
-
-Or from a shell:
+The cat shows up right away, and in every new session after that, desktop app included. Or from a shell:
 
 ```bash
-claude plugin marketplace add matthlh/claude-cat-mod
+claude plugin marketplace add matthlh/claude-mods
 claude plugin install pixel-cat@matthlh
 ```
 
 Update with `claude plugin update pixel-cat@matthlh`, remove with `claude plugin uninstall pixel-cat@matthlh`.
 
-**No cat?** Mods are still rolling out. Add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block of `~/.claude/settings.json` and start a new session.
+**No cat?** Mods are still rolling out. Add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block of `~/.claude/settings.json` and start a new session (quit the desktop app fully, not just the window).
 
 ### From a clone
 
 To change the cat, run your own copy instead:
 
 ```bash
-git clone https://github.com/matthlh/claude-cat-mod ~/.claude/mods/pixel-cat
-claude --plugin-dir ~/.claude/mods/pixel-cat
+git clone https://github.com/matthlh/claude-mods ~/.claude/mods/claude-mods
+claude --plugin-dir ~/.claude/mods/claude-mods/plugins/pixel-cat
 ```
 
-To load the clone in every session, including the desktop app, put its full path in the `env` block of `~/.claude/settings.json`:
-
-```json
-{
-  "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/pixel-cat",
-    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
-  }
-}
-```
-
-| OS | Path | Separator for several folders |
-| --- | --- | --- |
-| macOS | `/Users/<you>/.claude/mods/pixel-cat` | `:` |
-| Linux | `/home/<you>/.claude/mods/pixel-cat` | `:` |
-| Windows | `C:\\Users\\<you>\\.claude\\mods\\pixel-cat` (JSON needs the doubled `\\`) | `;` |
-
-Write the full path. Older versions don't expand `~` here, so `~/.claude/mods/pixel-cat` silently loads nothing. Sessions already open when you change settings pick it up only after a restart.
+To load the clone in every session, including the desktop app, put the plugin folder's full path in `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/settings.json`; the [top-level README](../../README.md#run-from-a-clone) has the per-OS paths.
 
 ## Customize
 
@@ -116,8 +98,8 @@ Edit the grids or the `PALETTE` to make a tuxedo, calico or black cat. In an int
 Check your changes with:
 
 ```bash
-claude plugin validate ~/.claude/mods/pixel-cat
-claude plugin test ~/.claude/mods/pixel-cat
+claude plugin validate ~/.claude/mods/claude-mods/plugins/pixel-cat
+claude plugin test ~/.claude/mods/claude-mods/plugins/pixel-cat
 ```
 
 The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity and perch in every scene, so a drawing the engine would refuse fails there instead of silently disappearing.

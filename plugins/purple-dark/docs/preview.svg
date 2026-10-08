@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="200" viewBox="0 0 560 200" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">
+  <rect width="560" height="200" rx="8" fill="#141018"/>
+  <rect x="16" y="16" width="528" height="36" rx="6" fill="rgb(34,26,52)"/>
+  <text x="28" y="39" fill="rgb(130,170,255)" font-weight="bold">You</text>
+  <text x="68" y="39" fill="#e6e1f0">make the theme purple</text>
+  <text x="28" y="80" fill="rgb(176,132,255)" font-weight="bold">Claude</text>
+  <text x="88" y="80" fill="#e6e1f0">Done. The accent, borders and backgrounds now use purple.</text>
+  <text x="28" y="104" fill="rgb(140,125,175)">  ⎿ Edited themes/purple-dark.json</text>
+  <rect x="16" y="124" width="528" height="40" rx="6" fill="none" stroke="rgb(120,96,180)" stroke-width="1.5"/>
+  <text x="28" y="149" fill="rgb(176,132,255)">&gt;</text>
+  <text x="44" y="149" fill="rgb(170,140,255)">try /theme to pick Purple Dark</text>
+  <rect x="16" y="176" width="160" height="8" rx="4" fill="rgb(50,38,80)"/>
+  <rect x="16" y="176" width="104" height="8" rx="4" fill="rgb(176,132,255)"/>
+  <text x="186" y="184" fill="rgb(110,98,140)">5-hour limit 65%</text>
+  <text x="400" y="184" fill="rgb(150,110,255)">● auto mode</text>
+</svg>

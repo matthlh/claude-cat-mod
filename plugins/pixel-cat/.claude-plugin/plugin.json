@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "description": "A little pixel cat that wanders above the Claude Code prompt, watches your usage limits and announces when work finishes",
   "author": { "name": "matthlh" },
-  "repository": "https://github.com/matthlh/claude-cat-mod",
+  "homepage": "https://github.com/matthlh/claude-mods/tree/main/plugins/pixel-cat",
+  "repository": "https://github.com/matthlh/claude-mods",
   "license": "MIT",
+  "keywords": ["mod", "pixel-art", "cat"],
   "types": "./types/index.d.ts"
 }

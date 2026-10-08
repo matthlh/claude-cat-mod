@@ -1,0 +1,11 @@
+{
+  "name": "token-tycoon",
+  "version": "0.1.0",
+  "description": "A Claude-themed idle game above the prompt: prompt a task block to clear it, hire agents, upgrade models and infra, and earn from your real Claude Code usage",
+  "author": { "name": "matthlh" },
+  "homepage": "https://github.com/matthlh/claude-mods/tree/main/plugins/token-tycoon",
+  "repository": "https://github.com/matthlh/claude-mods",
+  "license": "MIT",
+  "keywords": ["mod", "idle-game"],
+  "types": "./types/index.d.ts"
+}
