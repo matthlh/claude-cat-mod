@@ -1,9 +1,9 @@
 import type { HeroState, Motion } from '../../types'
 import type { Bed, Draw, Pack, Palette, Rows, SvgCtx } from '../packs/types'
-import { CREW_MAX, crewSvg, joiningSlots } from './crew'
+import { CREW_MAX, crewSvg, joinOf, joining } from './crew'
 import { clamp01, cycleFrames, faceRight, frames, hex, posePeriod, rects } from './draw'
 import { BED_X, HAT_PAD, HEADROOM, HERO_H, HERO_W, LANE_H, MAX_X, PX, SLIDE_MS } from './geometry'
-import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
+import { activityOf, bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
 import type { Extras, Lane } from './lane'
 import { posAt } from './motion'
 import { hourOf, phaseAt } from './time'
@@ -146,7 +146,7 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
     ahead: (w, gap = 3) => (dir === 1 ? HERO_W + gap : -w - gap),
     at,
     pct,
-    crew: joiningSlots(x.crew, CREW_MAX),
+    joining: joining(pack, act, m, x.crew, CREW_MAX),
   }
   const body = heroSvg(pack, c, l, { ...palette, ...pack.hero.hatPal }, id.marking, x.hat ?? 'none', remaining)
 
@@ -191,6 +191,27 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
     floatX = dx + 14 // z's drift beside the hero, not off the top of the lane
   }
 
+  // The followers, beneath the hero and what is ahead of it, in lane
+  // coordinates. Asleep in bed, they stand past the bed's foot.
+  const crew = crewSvg(
+    {
+      art: pack.crew,
+      crew: x.crew,
+      m,
+      trail: x.trail,
+      dir,
+      joinOf: leg => joinOf(pack, activityOf(pack, leg.activity), leg),
+      now,
+      asleep: isInBed(c, m),
+      // The lane, less the gauge at its right end.
+      ...(x.laneW ? { room: { span: (x.laneW * MAX_X) / 100 / PX, width: (x.laneW - (gauge ? widthOf(gauge.rows) * PX + 8 + PX : 0)) / PX } } : {}),
+      bed: (BED_X + widthOf(scene.bed.rows) * PX) / PX,
+    },
+    pct,
+    cur,
+    QUIET_COLOR,
+  )
+
   // color-scheme lets the frame follow the app's light or dark appearance,
   // so a lane with no backdrop stays see-through instead of a white page.
   return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${LANE_H}" overflow="visible" style="background:transparent">
@@ -198,7 +219,7 @@ export function laneSvg(pack: Pack, c: HeroState, m: Motion, now: number, palett
   ${scene.backdrop(x.hour ?? 12)}
   ${gauge ? `<svg x="100%" y="${HEADROOM}" overflow="visible"><g shape-rendering="crispEdges" transform="translate(${-widthOf(gauge.rows) * PX - 8} ${HERO_H - gauge.rows.length * PX})">${rects(gauge.rows, gauge.pal)}</g></svg>` : ''}
   ${bedSvg(c, m, now, scene.bed)}
-  ${stage}${target}${crewSvg({ art: pack.crew, crew: x.crew, m, trail: x.trail, dir, join: act?.crew, now, asleep: isInBed(c, m) }, pct, cur, QUIET_COLOR)}
+  ${stage}${target}${crew}
   <svg x="${pct(cur)}" y="${HEADROOM}" width="${HERO_W}" height="${HERO_H}" overflow="visible">${glide}
     ${bedOpen}
     <g shape-rendering="crispEdges">

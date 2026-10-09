@@ -1,9 +1,9 @@
 import type { HeroState, Motion } from '../../types'
 import type { CellsCtx, Pack, Palette, Rows } from '../packs/types'
-import { crewCells, joiningSlots, terminalCap } from './crew'
+import { crewCells, joinOf, joining, terminalCap } from './crew'
 import { faceRight } from './draw'
 import { HAT_PAD, HERO_COLS, LANE_PIX, LANE_ROWS, TERMINAL_DEFAULT } from './geometry'
-import { bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
+import { activityOf, bedShown, hasCompanion, isHappy, isInBed, lane, lookOf, moodColor, QUIET_COLOR, shut, wear } from './lane'
 import type { Extras, Lane } from './lane'
 import { posAt } from './motion'
 import { hourOf, phaseAt } from './time'
@@ -95,21 +95,24 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     cy = -Math.min(4, ph - 1 + (bed.float ? 1 : 0))
   }
   // The gauge at the right end shows how much context is left.
+  let laneEnd = cols
   if (typeof x.ctx === 'number') {
     const gauge = pack.gauge(x.ctx)
-    plot(gauge.rows, cols - (gauge.rows[0]?.length ?? 0) - 1, LANE_PIX - gauge.rows.length, gauge.pal)
+    laneEnd = cols - (gauge.rows[0]?.length ?? 0) - 1
+    plot(gauge.rows, laneEnd, LANE_PIX - gauge.rows.length, gauge.pal)
   }
-  // What the activity brings, beneath the hero as on the desktop: its stage
-  // (in lane columns), something at its destination, and something ahead.
-  // Before packs the terminal plotted the cat first and these on top, the
-  // reverse of the desktop. Beneath on both surfaces is deliberate; anything
-  // that should cover the hero belongs in `over`. The one drawing that
-  // changed: 'caught' under mood 'sleep' with a coat whose blush differs
-  // from the mouse's tail, where the tail now hides under the sleeping body.
-  // The brain never plans that; it can show for one repaint between the two
-  // state writes at bedtime.
+  // Layers, bottom to top, as on the desktop: what the activity brings
+  // beneath the hero (its stage, in lane columns, and something at its
+  // destination), the followers, then what is ahead of the hero, the hero,
+  // and what is over it. Before packs the terminal plotted the cat first and
+  // these on top, the reverse of the desktop. Beneath on both surfaces is
+  // deliberate; anything that should cover the hero belongs in `over`. The
+  // one drawing that changed: 'caught' under mood 'sleep' with a coat whose
+  // blush differs from the mouse's tail, where the tail now hides under the
+  // sleeping body. The brain never plans that; it can show for one repaint
+  // between the two state writes at bedtime.
   const hour = hourOf(x.hour ?? 12)
-  const crew = joiningSlots(x.crew, terminalCap(cols))
+  const joiningNow = joining(pack, act, m, x.crew, terminalCap(cols))
   const at = (x0: number, put = plot): CellsCtx => ({
     leg: m,
     hero: c,
@@ -123,15 +126,32 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
     ahead: (w, gap = 1) => (dir === 1 ? x0 + HERO_COLS + gap : x0 - w - gap),
     col: p => Math.round(p * span),
     plot: put,
-    crew,
+    joining: joiningNow,
   })
   if (busy && act) {
     act.stage?.cells(at(0))
     act.target?.cells(at(Math.round(m.to * span)))
-    act.draw?.cells(at(cx))
   }
-  // The followers, beneath the hero as on the desktop.
-  const tag = crewCells({ art: pack.crew, crew: x.crew, m, trail: x.trail, dir, join: act?.crew, now, asleep: isInBed(c, m) }, cols, span, cx, plot)
+  // Asleep in bed, the followers stand past its foot and the z's.
+  const zx = dir === 1 || isInBed(c, m) ? cx + HERO_COLS : cx - 4
+  const tag = crewCells(
+    {
+      art: pack.crew,
+      crew: x.crew,
+      m,
+      trail: x.trail,
+      dir,
+      joinOf: leg => joinOf(pack, activityOf(pack, leg.activity), leg),
+      now,
+      asleep: isInBed(c, m),
+      room: { span, width: laneEnd - 1 }, // clear of the gauge
+      bed: Math.max(1 + pw, 1 + Math.floor((pw - HERO_COLS) / 2) + HERO_COLS + 3), // the bed's foot, the z's end
+    },
+    cols,
+    cx,
+    plot,
+  )
+  if (busy && act) act.draw?.cells(at(cx))
   const id = lookOf(pack, x.identity)
   const dressed = wear(pack.hero, heroRows(pack, c, l, now), id.marking, x.hat ?? 'none', l.posture === 'asleep')
   plot(face(dressed), cx, cy - HAT_PAD, { ...palette, ...pack.hero.hatPal })
@@ -159,7 +179,6 @@ export function laneCells(pack: Pack, c: HeroState, m: Motion, now: number, pale
 
   if (l.posture === 'asleep') {
     const z = ['z', 'zZ', 'zZz', ' Zz', '  z'][Math.floor(now / 500) % 5] ?? 'z'
-    const zx = dir === 1 || isInBed(c, m) ? cx + HERO_COLS : cx - 4
     for (let i = 0; i < z.length; i++) put(zx + i, 1, z.charAt(i), QUIET_COLOR)
   }
 

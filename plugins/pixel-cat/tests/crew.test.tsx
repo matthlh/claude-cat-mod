@@ -1,11 +1,14 @@
 import { test, expect, mock } from 'claude-code/testing'
 import { laneCells } from '../hooks/engine/cells'
-import { CREW_MAX, HOP_MS, LEAVE_MS, lunge, muster, terminalCap, workingCount } from '../hooks/engine/crew'
-import { coatOf } from '../hooks/engine/lane'
+import { CREW_MAX, crewCells, extendTrail, HOP_MS, joinOf, LEAVE_MS, lunge, muster, terminalCap, TRAIL_MS, workingCount } from '../hooks/engine/crew'
+import type { Trail } from '../hooks/engine/crew'
+import { activityOf, coatOf } from '../hooks/engine/lane'
+import { legDir } from '../hooks/engine/motion'
 import { laneSvg } from '../hooks/engine/svg'
 import { PACKS, packProblems } from '../hooks/packs/index'
-import type { Pack } from '../hooks/packs/types'
+import type { Dir, Pack, Rows } from '../hooks/packs/types'
 import type { Follower, HeroState, Motion } from '../types'
+import { decodeCells } from './raster'
 
 // The crew: one follower for each agent of this session that is working.
 
@@ -19,24 +22,9 @@ const agents = (list: [string, string][]) => list.map(([id, status]) => ({ id, s
 // Each follower drawn on the desktop has one facing group.
 const followersIn = (svg: string) => (svg.match(/<g transform="scale\(/g) ?? []).length
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-// The terminal raster back into [char, fg, bg] cells.
-function decode(s: string): number[] {
-  const bytes: number[] = []
-  for (let i = 0; i < s.length; i += 4) {
-    const n = (B64.indexOf(s.charAt(i)) << 18) | (B64.indexOf(s.charAt(i + 1)) << 12) | ((B64.indexOf(s.charAt(i + 2)) & 63) << 6) | (B64.indexOf(s.charAt(i + 3)) & 63)
-    bytes.push((n >> 16) & 255)
-    if (s[i + 2] !== '=') bytes.push((n >> 8) & 255)
-    if (s[i + 3] !== '=') bytes.push(n & 255)
-  }
-  const out: number[] = []
-  const at = (i: number) => bytes[i] ?? 0
-  for (let i = 0; i + 3 < bytes.length; i += 4) out.push((at(i) | (at(i + 1) << 8) | (at(i + 2) << 16) | (at(i + 3) << 24)) >>> 0)
-  return out
-}
 // The terminal's text: printable characters as they are, pixels as '#', blanks as ' '.
 function textOf(cells: string, cols: number): string[] {
-  const c = decode(cells)
+  const c = decodeCells(cells)
   const rows: string[] = []
   for (let y = 0; y < 5; y++) {
     let line = ''
@@ -197,7 +185,7 @@ test('0, 1, 3 and 9 followers on both surfaces, every desktop frame under the ca
         const still = !!a?.move && 'stay' in a.move
         const m: Motion = { from: 0.4, to: still ? 0.4 : 0.6, t0: NOW - 500, dur: 3000, activity, hit: i % 2 === 0 }
         for (const dir of [1, -1] as const) {
-          const trail = { leg: { from: 0.7, to: 0.4, t0: NOW - 4000, dur: 3500 }, dir: -dir as 1 | -1 }
+          const trail = [{ leg: { from: 0.7, to: 0.4, t0: NOW - 4000, dur: 3500 }, dir: -dir as 1 | -1 }]
           const crew = crewOf(9).map((f, k) => (k === 2 ? { ...f, leavingAt: NOW - 100 } : k === 3 ? { ...f, since: NOW - 100 } : f))
           const svg = laneSvg(pack, { ...hero, dir, say: 'working on it' }, m, NOW, coatOf(pack), scene, { crew, trail, ctx: 50, hour: 22 })
           expect(svg.length).toBeLessThan(SVG_CAP)
@@ -234,7 +222,7 @@ test('a follower leaving hops, poofs and is gone, on both surfaces', () => {
   const crew = (leavingAt: number): Follower[] => [{ id: 'a', slot: 0, since: 0 }, { id: 'b', slot: 1, since: 0, leavingAt }, { id: 'c', slot: 2, since: 0 }]
   // Desktop: the hop and the puff are in the drawing made as it leaves.
   const svg = laneSvg(CAT, hero, sitting, NOW, coat, 'clear', { crew: crew(at) })
-  expect(svg).toContain('values="0 0;0 -9;0 0;0 -6;0 0"')
+  expect(svg).toContain('values="0 0;0 -6;0 0;0 -3;0 0" keyTimes="0;0.25;0.5;0.75;1"')
   expect(svg).toContain('<set attributeName="opacity" to="1"')
   expect(followersIn(svg)).toBe(3)
   // Gone: drawn just as if it never was, its slot left empty.
@@ -289,12 +277,164 @@ test('flying followers hover above the ground; bad crews are refused', () => {
   expect(runs(ground(CAT)).length).toBe(2)
   expect(runs(ground(flyers)).length).toBe(1)
   expect(packProblems(flyers)).toEqual([])
-  // Hovering, with a bob, a step out of time with the next one.
+  // Hovering, with a bob a step up every other 600 ms, out of step with the
+  // next one, and in step with the terminal (NOW is 400 ms into a step).
   const svg = laneSvg(flyers, hero, sitting, NOW, coat, 'clear', { crew: crewOf(2) })
-  expect(svg).toContain('values="0 0;0 -3;0 0" dur="1.2s" begin="0s"')
-  expect(svg).toContain('values="0 0;0 -3;0 0" dur="1.2s" begin="-0.4s"')
+  expect(svg).toContain('values="0 0;0 -3" calcMode="discrete" dur="1200ms" begin="-400ms"')
+  expect(svg).toContain('values="0 0;0 -3" calcMode="discrete" dur="1200ms" begin="-1000ms"')
   // Too tall to fly that high, too wide, a join outside the leg.
   expect(packProblems({ ...CAT, crew: { ...crew, flying: { height: 6 } } }).length).toBe(1)
   expect(packProblems({ ...CAT, crew: { ...crew, move: [['.'.repeat(13)], ['o']] } }).length).toBe(1)
   expect(packProblems({ ...CAT, activities: { ...CAT.activities, sit: { crew: { during: [0.5, 1.2] } } } }).length).toBe(1)
+})
+
+// ── The trail, the room, the bed ────────────────────────────────────────
+
+test('the trail keeps the last few legs: a new one on the end, the same one kept current, old ones dropped', () => {
+  const leg = (t0: number, from: number, to: number): Motion => ({ from, to, t0, dur: 1000, activity: 'walk' })
+  let trail: Trail[] = []
+  trail = extendTrail(trail, leg(0, 0.2, 0.3), 1, 0)
+  const same = extendTrail(trail, leg(0, 0.2, 0.3), 1, 500)
+  expect(same).toBe(trail)
+  trail = extendTrail(trail, leg(1000, 0.3, 0.2), -1, 1000)
+  trail = extendTrail(trail, { ...leg(2000, 0.2, 0.2), activity: 'sit' }, -1, 2000)
+  // The hero turned on the spot: the same leg, facing the new way.
+  trail = extendTrail(trail, { ...leg(2000, 0.2, 0.2), activity: 'sit' }, 1, 2100)
+  expect(trail.map(t => [t.leg.t0, t.dir])).toEqual([[0, 1], [1000, -1], [2000, 1]])
+  // A leg that ended over TRAIL_MS ago is gone; the one before the new one stays.
+  trail = extendTrail(trail, leg(20_000, 0.2, 0.5), 1, 20_000)
+  expect(trail.map(t => t.leg.t0)).toEqual([2000, 20_000])
+  trail = extendTrail(trail, leg(31_000, 0.5, 0.6), 1, 31_000)
+  expect(trail.map(t => t.leg.t0)).toEqual([20_000, 31_000])
+  expect(TRAIL_MS).toBeGreaterThan(5 * 260 + 2600)
+})
+
+test('no follower jumps when the hero turns again before they have walked round', () => {
+  const cols = 200
+  const span = cols - 13
+  // Right 1.5 s, left 0.9 s, right 1 s, then a sit: each leg shorter than the farthest walk-round.
+  const legs: Trail[] = []
+  let t = 0
+  let at = 0.5
+  for (const [d, ms] of [[1, 1500], [-1, 900], [1, 1000], [0, 6000]] as const) {
+    const to = at + d * 0.06 * (ms / 1000)
+    legs.push({ leg: { from: at, to, t0: t, dur: ms, activity: d ? 'walk' : 'sit' }, dir: d || 1 })
+    at = to
+    t += ms
+  }
+  const crew = crewOf(5)
+  let trail: Trail[] = []
+  const was = new Map<number, number>()
+  let worst = 0
+  for (let now = 0; now < t; now += 50) {
+    const cur = [...legs].reverse().find(l => l.leg.t0 <= now) ?? legs[0]
+    if (!cur) break
+    trail = extendTrail(trail, cur.leg, legDir(cur.leg, cur.dir), now)
+    const x0 = Math.round((cur.leg.from + (cur.leg.to - cur.leg.from) * Math.min(1, (now - cur.leg.t0) / cur.leg.dur)) * span)
+    const plot = (_r: Rows, x: number, _y: number, pal: Record<string, number>) => {
+      const key = pal.o
+      if (key === undefined) return
+      const before = was.get(key)
+      if (before !== undefined) worst = Math.max(worst, Math.abs(x - before))
+      was.set(key, x)
+    }
+    const sc = { art: CAT.crew, crew, m: cur.leg, trail, dir: cur.dir as Dir, joinOf: (leg: Motion) => joinOf(CAT, activityOf(CAT, leg.activity), leg), now, room: { span, width: cols } }
+    crewCells(sc, cols, x0, plot)
+  }
+  // A step of the walk and of the walk-round, at most, in one 50 ms frame.
+  expect(worst).toBeLessThanOrEqual(3)
+})
+
+test('with no room behind the hero, the followers that do not fit stand in front of it, facing it', () => {
+  const coat = coatOf(CAT)
+  const right: HeroState = { mood: 'sit', dir: 1, say: null }
+  const edge: Motion = { from: 0.02, to: 0.02, t0: NOW - 1000, dur: 8000, activity: 'sit' }
+  // Terminal: every follower drawn is in the lane, and only those beyond the cap are counted.
+  const cols = 160
+  const lines = textOf(laneCells(CAT, right, edge, NOW, coat, cols, 'clear', { crew: crewOf(7) }), cols)
+  const spans = runs(lines[4] ?? '')
+  expect(spans.length).toBe(1 + CREW_MAX)
+  const [heroSpan] = spans
+  expect(spans.slice(1).every(([a]) => a > (heroSpan?.[1] ?? cols))).toBe(true)
+  expect(lines.join('\n').match(/\+(\d+)/)?.[1]).toBe('2')
+  // Desktop, with the lane's width: all in front, none off the left edge.
+  const svg = laneSvg(CAT, right, edge, NOW, coat, 'clear', { crew: crewOf(5), laneW: 823 })
+  const offs = [...svg.matchAll(/overflow="visible"><g transform="translate\((-?[\d.]+) 0\)">/g)].map(x => Number(x[1]))
+  expect(offs.length).toBe(5)
+  expect(offs.every(x => x > 0)).toBe(true)
+  // Mid-lane, they stay behind.
+  const mid = laneSvg(CAT, right, { ...edge, from: 0.5, to: 0.5 }, NOW, coat, 'clear', { crew: crewOf(5), laneW: 823 })
+  expect([...mid.matchAll(/overflow="visible"><g transform="translate\((-?[\d.]+) 0\)">/g)].every(x => Number(x[1]) < 0)).toBe(true)
+})
+
+test('asleep in bed, the followers stand past its foot and the z\'s', () => {
+  const coat = coatOf(CAT)
+  const bed: Motion = { from: 0, to: 0, t0: NOW - 5000, dur: 60_000, activity: 'perch' }
+  const cols = 160
+  for (const scene of Object.keys(CAT.scenes)) {
+    const pw = CAT.scenes[scene]?.bed.rows[0]?.length ?? 0
+    const lines = textOf(laneCells(CAT, { mood: 'sleep', dir: -1, say: null }, bed, NOW, coat, cols, scene, { crew: crewOf(2) }), cols)
+    const spans = runs(lines[4] ?? '')
+    const z = Math.max(...lines.map(l => Math.max(l.lastIndexOf('z'), l.lastIndexOf('Z'))))
+    // The bed (with the hero in it), then the two kittens clear of it and of the z's.
+    const kittens = spans.filter(([a]) => a > pw)
+    expect(kittens.length).toBe(2)
+    expect(kittens[0]?.[0]).toBeGreaterThan(Math.max(pw, z))
+  }
+})
+
+test('the followers are drawn beneath what is ahead of the hero, on both surfaces', () => {
+  const coat = coatOf(CAT)
+  const INK = 0x123456
+  const cols = 120
+  const sit = CAT.activities.sit ?? {}
+  const covered: Pack = {
+    ...CAT,
+    activities: {
+      ...CAT.activities,
+      sit: { ...sit, draw: { svg: () => '<rect id="ahead"/>', cells: ctx => ctx.plot(Array.from({ length: 10 }, () => 'k'.repeat(cols)), 0, 0, { k: INK }) } },
+    },
+  }
+  const m: Motion = { from: 0.4, to: 0.4, t0: NOW - 1000, dur: 8000, activity: 'sit' }
+  const cells = decodeCells(laneCells(covered, hero, m, NOW, coat, cols, 'clear', { crew: crewOf(2) }))
+  const kitten = new Set(Object.values(CAT.crew?.coats[0] ?? {}).filter(c => !Object.values(coat).includes(c)))
+  const colours = new Set<number>()
+  for (let i = 0; i < cells.length; i += 3) colours.add(cells[i + 1] ?? 0).add(cells[i + 2] ?? 0)
+  expect(kitten.size).toBeGreaterThan(0)
+  expect([...kitten].some(c => colours.has(c))).toBe(false)
+  const svg = laneSvg(covered, hero, m, NOW, coat, 'clear', { crew: crewOf(2) })
+  expect(svg.indexOf('<g transform="scale(')).toBeLessThan(svg.indexOf('id="ahead"'))
+})
+
+test('Ctx.joining names only the followers a join brings in', () => {
+  const coat = coatOf(CAT)
+  const seen: (readonly number[] | undefined)[] = []
+  const probe = { svg: (c: { joining?: readonly number[] }) => (seen.push(c.joining), ''), cells: (c: { joining?: readonly number[] }) => void seen.push(c.joining) }
+  const m: Motion = { from: 0.4, to: 0.4, t0: NOW - 100, dur: 3000, activity: 'probe' }
+  const withJoin = (crew: Pack['activities'][string]['crew']): Pack => ({ ...CAT, activities: { ...CAT.activities, probe: { move: { stay: 3000 }, draw: probe, ...(crew ? { crew } : {}) } } })
+  const both = (pack: Pack) => {
+    seen.length = 0
+    laneSvg(pack, hero, m, NOW, coat, 'clear', { crew: crewOf(3) })
+    laneCells(pack, hero, m, NOW, coat, 120, 'clear', { crew: crewOf(3) })
+    return seen.map(s => [...(s ?? [])])
+  }
+  expect(both(withJoin(lunge(0.5, 3)))).toEqual([[0, 1, 2], [0, 1, 2]].map((s, i) => (i ? s.slice(0, terminalCap(120)) : s)))
+  expect(both(withJoin(undefined))).toEqual([[], []])
+  expect(both(withJoin({ ...lunge(0.5, 3), only: () => false }))).toEqual([[], []])
+  const { crew: _none, ...noCrew } = withJoin(lunge(0.5, 3))
+  expect(both(noCrew)).toEqual([[], []])
+})
+
+test('on a narrow terminal, a place in sight goes to an agent waiting out of it', () => {
+  const ids = ['a', 'b', 'c', 'd']
+  const cap = terminalCap(80)
+  let crew = muster([], agents(ids.map(id => [id, 'running'])), 0, cap)
+  crew = muster(crew, agents(ids.filter(id => id !== 'a').map(id => [id, 'running'])), 1000, cap)
+  crew = muster(crew, agents(ids.filter(id => id !== 'a').map(id => [id, 'running'])), 1000 + LEAVE_MS, cap)
+  expect(crew.map(f => [f.id, f.slot])).toEqual([['c', 0], ['b', 1], ['d', 3]])
+  // The desktop's places are all in sight already: nobody moves.
+  let wide = muster([], agents(ids.map(id => [id, 'running'])), 0)
+  wide = muster(wide, agents(ids.filter(id => id !== 'a').map(id => [id, 'running'])), 1000 + LEAVE_MS)
+  wide = muster(wide, agents(ids.filter(id => id !== 'a').map(id => [id, 'running'])), 2000 + LEAVE_MS)
+  expect(wide.map(f => [f.id, f.slot])).toEqual([['b', 1], ['c', 2], ['d', 3]])
 })

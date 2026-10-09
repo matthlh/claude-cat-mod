@@ -1,10 +1,9 @@
 import type { Motion, Phase } from '../../../types'
 import { cycleFrames, faceRight, posePeriod, rects } from '../../engine/draw'
 import { HERO_COLS, PX } from '../../engine/geometry'
-import { CREW_MAX, lunge } from '../../engine/crew'
 import { appear, fallOver, GROUND, layers, perLeg, popTo, track } from '../../engine/track'
 import type { Key, Pop, Sprite, TrackDraw } from '../../engine/track'
-import type { Activity, CellsCtx, Palette, Pose, Rows, SvgCtx } from '../types'
+import type { Activity, CellsCtx, CrewJoin, Palette, Pose, Rows, SvgCtx } from '../types'
 import {
   AXE, AXE_DOWN, AXE_HIGH, BOOK, BOW, BOW_ARC, BUNNY_A, BUNNY_B, CHEER, CHAIR, COIN_A, COIN_B, DAMAGE_PAL, damageRows, FX_PAL, GRIPS,
   HAMMER, HAMMER_DOWN, HANDS, HOLD_A, ITEM_PAL, LANTERN, MOB_PAL, ORE_COPPER, ORE_GOLD, ORE_IRON, PICKAXE, PICKAXE_DOWN, POOF_1,
@@ -356,18 +355,40 @@ const arrow = (from: number, to: number, extra: number) =>
 // ── Summons and damage numbers ──────────────────────────────────────────
 
 // The minions (Pack.crew, summons.ts) dash in at the foe between the hero's
-// two blows, each in its attack frame, a ripple down the line, and back. The
-// whole line reaches the same spot, the foe's front once the first blow has
-// knocked it back; the nearest minion goes this far, from its own place
-// behind the hero to a pixel into the foe.
-export const SUMMON_STAGGER = 100
+// two blows, a ripple down the line: out from behind the hero, a stand at
+// the foe's front in the attack frame, and back. The whole line reaches the
+// same spot, the foe's front once the first blow has knocked it back; the
+// nearest minion goes this far, from its own place behind the hero to a
+// pixel into the foe. The followers are drawn beneath the hero and the foe,
+// so a dash that only touched the foe and turned would be hidden behind the
+// hero all the way: the stand is what shows the attack, on both surfaces
+// (the terminal repaints 10 times a second, so it catches a stand of 190 ms).
+export const SUMMON_STAGGER = 120
 const reachFor = (gap: number) => HERO_COLS + gap + 2 + 1 + SUMMON_GAP
-type Fight = { gap: number; hits: [number, number]; peak: number }
+// The part of the dash spent going out, and where the way back starts.
+const DASH_OUT = 0.25
+const DASH_BACK = 0.65
+// `during`: the nearest minion's dash, as fractions of the leg; `peak`, the
+// middle of its stand at the foe; `hit`, the moment it gets there.
+type Fight = { gap: number; hits: [number, number]; during: [number, number]; peak: number; hit: number }
+const fight = (gap: number, hits: [number, number], during: [number, number]): Fight => {
+  const [a, b] = during
+  return { gap, hits, during, peak: a + ((DASH_OUT + DASH_BACK) / 2) * (b - a), hit: a + DASH_OUT * (b - a) }
+}
 export const FIGHTS = {
-  strike: { gap: SWORD_GAP, hits: STRIKE_HITS, peak: 0.38 },
-  shoot: { gap: BOW_GAP, hits: SHOOT_HITS, peak: 0.44 },
+  strike: fight(SWORD_GAP, STRIKE_HITS, [0.3, 0.5]),
+  shoot: fight(BOW_GAP, SHOOT_HITS, [0.32, 0.5]),
 } satisfies Record<string, Fight>
-const summonsJoin = (f: Fight) => lunge(f.peak, reachFor(f.gap), { span: 0.14, rise: 1, stagger: SUMMON_STAGGER, together: true })
+const summonsJoin = (f: Fight): CrewJoin => {
+  const reach = reachFor(f.gap)
+  return {
+    during: f.during,
+    // Level all the way: a flyer's bob already reaches the terminal's top row.
+    keys: [[0, 0, 0], [DASH_OUT, reach, 0], [DASH_BACK, reach, 0], [1, 0, 0]],
+    stagger: SUMMON_STAGGER,
+    together: true,
+  }
+}
 
 // A number floats up off the foe on every hit, the hero's and each minion's,
 // and fades: gold for the hero (red, and double, for a critical), white for
@@ -376,30 +397,41 @@ const summonsJoin = (f: Fight) => lunge(f.peak, reachFor(f.gap), { span: 0.14, r
 // terminal has none, so there it is the bare digits on the top rows, shown
 // for the same moment.
 const NUMBER_SPAN = 0.2
+// A minion's number is up for a little less than three of the ripple's
+// steps, so no more than three are ever up at once, each in a place of its
+// own (MINION_SPOTS), and the line's later hits take the places of its first.
+const MINION_SPOTS = 3
+const MINION_NUMBER_MS = MINION_SPOTS * SUMMON_STAGGER - 30
 type Tone = keyof typeof DAMAGE_PAL
-// `slot` is the minion's, or -1 for the hero's own blow.
-type Hit = { t: number; value: number; tone: Tone; slot: number }
+// `slot` is the minion's, or -1 for the hero's own blow; `span` the part of the leg it is up.
+type Hit = { t: number; span: number; value: number; tone: Tone; slot: number }
 function hitsOf(f: Fight, leg: Motion, slots: readonly number[]): Hit[] {
   const out: Hit[] = f.hits.map((t, i) => {
     const value = 7 + hashPick(leg.t0 + 0.37 * (i + 1), 12)
-    return hashPick(leg.t0 + 1.3 * (i + 1), 5) === 0 ? { t, value: value * 2, tone: 'red', slot: -1 } : { t, value, tone: 'yellow', slot: -1 }
+    return hashPick(leg.t0 + 1.3 * (i + 1), 5) === 0 ? { t, span: NUMBER_SPAN, value: value * 2, tone: 'red', slot: -1 } : { t, span: NUMBER_SPAN, value, tone: 'yellow', slot: -1 }
   })
   const dur = Math.max(1, leg.dur)
-  for (const slot of slots) out.push({ t: f.peak + (SUMMON_STAGGER * slot) / dur, value: 3 + hashPick(leg.t0 + 0.11 * (slot + 3), 7), tone: 'white', slot })
+  // Each minion's lands as it reaches the foe.
+  const span = MINION_NUMBER_MS / dur
+  for (const slot of slots) out.push({ t: f.hit + (SUMMON_STAGGER * slot) / dur, span, value: 3 + hashPick(leg.t0 + 0.11 * (slot + 3), 7), tone: 'white', slot })
   return out
 }
 // The digits alone, without the outline or the blank rows round it.
 const bare = (rows: Rows) => rows.slice(1, -1).map(r => r.slice(1, -1).replace(/k/g, '.'))
-// The hero's number is centred over the foe. The minions' go beyond it, on
-// the far side from the hero, so a ripple of hits stays readable and never
-// runs together with the hero's into one number: on the desktop two columns
-// of them, every other pair lower; on the terminal, with no rows to spare,
-// one row of them side by side. [x, y] of the number's left edge and top,
-// for a number `w` wide whose widest (the hero's two digits) is `widest`.
-function numberPlace(slot: number, foeW: number, w: number, widest: number, columns: number, step: number): [number, number] {
-  const centred = (n: number) => Math.floor((foeW - n) / 2)
-  if (slot < 0) return [centred(w), 0]
-  return [centred(widest) + widest + 2 + (slot % columns) * step, Math.floor(slot / columns) % 2 ? 3 : 0]
+// The hero's number is over the foe as its blow knocks it back, but never
+// nearer the hero than two pixels past the foe's front: the minions make
+// their stand at the front. The minions' go beyond it, on the far side from
+// the hero and clear of where the hero's second blow puts its own, in
+// MINION_SPOTS places, `step` apart so that two up at once never read as one
+// number, the middle one `low` px lower, a zigzag. [x, y] of the number's
+// left edge and top, from the foe's place before it was struck, for a number
+// `w` wide whose widest (the hero's two digits) is `widest`.
+const KNOCKED_MOST = foeX([0, 0], 1)
+function numberPlace(slot: number, foeW: number, knocked: number, w: number, widest: number, step: number, low: number): [number, number] {
+  const over = (n: number) => Math.max(2, Math.floor((foeW - n) / 2))
+  if (slot < 0) return [knocked + over(w), 0]
+  const spot = slot % MINION_SPOTS
+  return [KNOCKED_MOST + over(widest) + widest + 2 + spot * step, spot % 2 ? low : 0]
 }
 // One number's drawing, made once for each place, moment and value it is
 // ever drawn at (a fight's are a handful), and kept.
@@ -407,19 +439,22 @@ const NUMBERS = new Map<string, TrackDraw>()
 const WIDEST = width(damageRows(88))
 function numberAt(f: Fight, foeW: number, hit: Hit): TrackDraw {
   const t = Math.round(hit.t * 1e4) / 1e4
-  const key = `${f.gap}|${foeW}|${t}|${hit.value}|${hit.tone}|${hit.slot}`
+  const span = Math.round(hit.span * 1e4) / 1e4
+  const key = `${f.gap}|${foeW}|${t}|${span}|${hit.value}|${hit.tone}|${hit.slot}`
   let d = NUMBERS.get(key)
   if (!d) {
     const rows = damageRows(hit.value)
     const digits = bare(rows)
-    const knocked = foeX(f.hits, t)
-    const end = t + NUMBER_SPAN
+    // Where the blow knocks the foe to.
+    const knocked = foeX(f.hits, t + FLASH)
+    const end = t + span
     const place = { pal: DAMAGE_PAL[hit.tone], gap: f.gap, layer: 'over' as const, mirror: false, show: [t, end] as [number, number] }
-    const [x, y] = numberPlace(hit.slot, foeW, width(rows), WIDEST, 2, 6)
-    const desk = track({ ...place, frames: rows, x: knocked + x, y: y - 1, keys: [[t, 0, 1, 1], [t + NUMBER_SPAN * 0.5, 0, -2, 1], [end, 0, -3, 0]] })
-    // The terminal's digits are 2 px narrower and shorter: on the top row.
-    const [tx] = numberPlace(hit.slot, foeW, width(digits), WIDEST - 2, CREW_MAX, 5)
-    const term = track({ ...place, frames: digits, x: knocked + tx, y: 0 })
+    const [x, y] = numberPlace(hit.slot, foeW, knocked, width(rows), WIDEST, width(rows) + 3, 3)
+    const desk = track({ ...place, frames: rows, x, y: y - 1, keys: [[t, 0, 1, 1], [t + span * 0.5, 0, -2, 1], [end, 0, -3, 0]] })
+    // The terminal's digits are 2 px narrower and shorter: from the top row,
+    // the zigzag's low one beside the foe, where the rows are free.
+    const [tx, ty] = numberPlace(hit.slot, foeW, knocked, width(digits), WIDEST - 2, width(digits) + 3, 2)
+    const term = track({ ...place, frames: digits, x: tx, y: ty })
     d = { layer: 'over', svg: desk.svg, cells: term.cells }
     if (NUMBERS.size > 400) NUMBERS.clear()
     NUMBERS.set(key, d)
@@ -429,7 +464,7 @@ function numberAt(f: Fight, foeW: number, hit: Hit): TrackDraw {
 const damageNumbers = (f: Fight) =>
   perLeg('over', ctx => {
     const foeW = width(FOES[foeOf(ctx)].walk[0] ?? [])
-    return hitsOf(f, ctx.leg, ctx.crew ?? []).map(hit => numberAt(f, foeW, hit))
+    return hitsOf(f, ctx.leg, ctx.joining ?? []).map(hit => numberAt(f, foeW, hit))
   })
 
 // ── Bunnies ─────────────────────────────────────────────────────────────

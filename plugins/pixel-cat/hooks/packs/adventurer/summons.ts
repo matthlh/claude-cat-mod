@@ -3,9 +3,11 @@ import { MINIONS } from './minions'
 import type { Minion, MinionId } from './minions'
 
 // The adventurer's followers: a summoned minion for each agent at work. The
-// kind goes by slot, in the order of MINIONS, and round again, so an agent
-// keeps its creature for as long as it keeps its slot (engine/crew.ts never
-// moves a follower that is in sight). Flyers hover behind the hero, a little
+// kind goes by slot, in the order of MINIONS: one kind for each of the five
+// places in sight, so an agent keeps its creature for as long as it keeps its
+// slot (engine/crew.ts never moves a follower that is in sight). Agents
+// waiting out of sight go round the kinds again, and take the kind of the
+// place they step into. Flyers hover behind the hero, a little
 // off the ground and bobbing; the rest keep to the ground, the slime in hops.
 // In a fight they dash at the foe in their attack frame (activities.ts);
 // while the hero sleeps they settle on the ground by the bed, eyes shut.
@@ -19,12 +21,15 @@ export function summonFor(slot: number): MinionId {
   return SUMMON_ORDER[((slot % n) + n) % n] ?? 'imp'
 }
 
-/** Sprite px a flyer hovers off the ground: an 8-row minion in the 10-row lane. */
-export const HOVER = 2
+/**
+ * Sprite px a flyer hovers off the ground: an 8-row minion in the 10-row
+ * lane, one off the ground and one more on its bob's up step.
+ */
+const HOVER = 1
 
 // Shut eyes: the top row of an eye (white e, pupil K) a dark lash line (d),
 // any row of it below that the colour beside it.
-export function shutEyes(rows: Rows): Rows {
+function shutEyes(rows: Rows): Rows {
   let lid = -1
   const beside = (row: string, x: number) => {
     for (let d = 1; d < row.length; d++) {
@@ -61,8 +66,13 @@ function kindOf(m: Minion): CrewKind {
 const KINDS = SUMMON_ORDER.map(id => kindOf(MINIONS[id]))
 const FIRST = MINIONS[SUMMON_ORDER[0] ?? 'imp']
 
-/** Pixels between the hero and the first minion, and between minions. */
-export const SUMMON_GAP = 2
+/**
+ * Pixels between the hero and the first minion, and between minions: room
+ * for a tool raised behind the head (a pickaxe reaches 6 columns past the
+ * hero's back) to swing nearly clear of the first, which hovers at head
+ * height.
+ */
+export const SUMMON_GAP = 4
 
 export const SUMMONS: Crew = {
   // The crew's own art is the first kind's, on the ground: every kind

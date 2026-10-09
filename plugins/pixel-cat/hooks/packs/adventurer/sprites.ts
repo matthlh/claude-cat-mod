@@ -491,7 +491,7 @@ export const ITEM_PAL: Palette = {
 // between digits, and rings it in k ink that follows the strokes (corners
 // left open) so it reads over any scenery. Colour it with one of DAMAGE_PAL:
 // white for a hit, yellow for a strong one, red for a hit taken.
-export const DIGITS: string[][] = [
+const DIGITS: string[][] = [
   ['nnn', 'n.n', 'n.n', 'N.N', 'NNN'],
   ['.n.', 'nn.', '.n.', '.N.', 'NNN'],
   ['nnn', '..n', 'nnn', 'N..', 'NNN'],
@@ -547,17 +547,6 @@ export const SPARKLE_3 = [
   '.w.w.',
   'y...y',
 ]
-// A small heart, 7 x 6, outlined like everything else: R red, r its shade,
-// W a shine on the near lobe.
-export const HEART = [
-  '.kk.kk.',
-  'kWRkRRk',
-  'kRRRRrk',
-  '.kRRrk.',
-  '..krk..',
-  '...k...',
-]
 export const FX_PAL: Palette = {
   W: 0xffffff, w: 0xfff3b0, y: 0xf5c542, // sparkle
-  R: 0xe8384a, r: 0xa8203a, k: INK, // heart
 }

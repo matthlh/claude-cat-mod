@@ -4,13 +4,13 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Follower, HeroState, Identity, Limits, Look, Mood, Motion, Phase, Prefs, Speed, Stats, ToolProp } from '../types'
 import { nextLeg, planLeg, strollPace } from './engine/brain'
 import { laneCells as drawCells } from './engine/cells'
-import { isWorking, muster, workingCount } from './engine/crew'
+import { CREW_MAX, extendTrail, isWorking, muster, terminalCap, workingCount } from './engine/crew'
 import type { Trail } from './engine/crew'
 import { DESKTOP_PX_PER_COLUMN, HERO_COLS, LANE_H, LANE_ROWS, SLIDE_MS } from './engine/geometry'
 import { HAT_TIERS, hatLabel, hatsOf, unlockedHats } from './engine/hats'
-import { activityOf, coatOf, lane as laneAt, lookOf } from './engine/lane'
+import { activityOf, coatOf, lookOf } from './engine/lane'
 import type { Extras } from './engine/lane'
-import { IN_BED, TO_BED, isWalking, posAt } from './engine/motion'
+import { IN_BED, TO_BED, isWalking, legDir, posAt } from './engine/motion'
 import { laneSvg as drawSvg } from './engine/svg'
 import { phaseAt } from './engine/time'
 import { COATS } from './packs/cat/sprites'
@@ -79,8 +79,6 @@ export function laneCells(c: HeroState, m: Motion, now: number, coat: Palette, c
 
 // The cat's coats by name, for the tests.
 export const PALETTES = COATS
-
-const sameLeg = (a: Motion, b: Motion) => a.t0 === b.t0 && a.dur === b.dur && a.from === b.from && a.to === b.to && a.activity === b.activity
 
 // What the hero works with for each kind of tool Claude runs.
 function toolProp(name: string): ToolProp | null {
@@ -184,16 +182,12 @@ export const register: Register = on => {
   let cues: { at: number; text: string }[] = []
   // Where the terminal lane is mounted, for in-place repaints.
   let site: { requestId: string; cols: number } | null = null
-  // The leg before the one drawn, and which way the hero faced on it: the
-  // followers finish it while their lag runs out. Seen by the drawings, so it
-  // needs no state of its own; lost on a reload, it costs a step at most.
-  let seen: Trail | undefined
-  let trail: Trail | undefined
-  const trailOf = (m: Motion, dir: 1 | -1): Trail | undefined => {
-    if (seen && !sameLeg(seen.leg, m)) trail = seen
-    seen = { leg: m, dir }
-    return trail
-  }
+  // The last few legs drawn, and which way the hero faced on each: the
+  // followers' path, which they finish while their lag runs out. Seen by the
+  // drawings, so it needs no state of its own; lost on a reload, it costs a
+  // step at most.
+  let path: Trail[] = []
+  const trailOf = (c: HeroState, m: Motion, now: number): Trail[] => (path = extendTrail(path, m, legDir(m, c.dir), now))
   // Assigned in session.start, where the timers live.
   let wake: (mood: Mood, say: string | null, holdMs: number, prop?: ToolProp | null) => Promise<void> = async () => {}
   let hungry = false
@@ -330,7 +324,7 @@ export const register: Register = on => {
         hat: p.hat,
         hour: new Date().getHours(),
         crew: await read($, crew),
-        trail: trailOf(m, laneAt(pack, c, m, now, p.scene).dir),
+        trail: trailOf(c, m, now),
       }
       const cells = drawCells(pack, c, m, now, coatOf(pack, p.coat), site.cols, p.scene, extras)
       const res = await $.ui.blit({ requestId: site.requestId, key: 'lane', cells, columns: site.cols, rows: LANE_ROWS })
@@ -385,7 +379,8 @@ export const register: Register = on => {
       try {
         const agents = await $.agent.list()
         const before = await read($, crew)
-        const after = muster(before, agents, await $.clock.now())
+        // On a narrow terminal, a place in sight goes to one waiting out of it.
+        const after = muster(before, agents, await $.clock.now(), site ? terminalCap(site.cols) : CREW_MAX)
         if (after !== before) await update($, crew, () => after)
       } catch {
         // No list this tick (not bound yet, say): the crew stays as it was.
@@ -600,12 +595,13 @@ export const register: Register = on => {
       hat: pr.hat,
       hour: new Date().getHours(),
       crew: await read($, crew),
-      trail: trailOf(m, laneAt(pack, c, m, now, pr.scene).dir),
+      trail: trailOf(c, m, now),
     }
     const usageNote = now < m.t0 + m.dur ? activityOf(pack, m.activity)?.usageNote : undefined
     const coat = coatOf(pack, pr.coat)
     const columns = e.viewport?.columns ?? 80
 
+    const laneW = Math.max(240, Math.round((columns - 2) * DESKTOP_PX_PER_COLUMN))
     let lane
     if (e.surface === 'terminal') {
       const cols = Math.max(HERO_COLS + 1, Math.min(512, columns - 2))
@@ -614,9 +610,9 @@ export const register: Register = on => {
     } else {
       lane = (
         <Svg
-          source={drawSvg(pack, c, m, now, coat, pr.scene, extras)}
+          source={drawSvg(pack, c, m, now, coat, pr.scene, { ...extras, laneW })}
           alt={`Claude ${pack.noun} (${c.mood})${c.say ? `: ${c.say}` : ''}`}
-          width={Math.max(240, Math.round((columns - 2) * DESKTOP_PX_PER_COLUMN))}
+          width={laneW}
           height={LANE_H}
           isInteractive
         />

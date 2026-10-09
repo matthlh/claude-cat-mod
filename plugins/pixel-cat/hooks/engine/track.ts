@@ -1,6 +1,6 @@
 import type { Motion } from '../../types'
 import type { Activity, CellsCtx, Draw, Palette, Rows, SvgCtx } from '../packs/types'
-import { clamp01, faceRight, rects } from './draw'
+import { clamp01, faceRight, fmt, rects, widthOf } from './draw'
 import { HERO_COLS, HERO_H, HERO_W, PX } from './geometry'
 
 // One declarative description of a moving sprite, drawn the same on both
@@ -96,9 +96,7 @@ export type TrackDraw = Draw & { layer: LayerName }
 type K = [number, number, number, number]
 const REST: K = [0, 0, 0, 1]
 
-const fmt = (n: number) => String(Number(n.toFixed(3)))
 const mod = (a: number, n: number) => ((a % n) + n) % n
-const widthOf = (rows: Rows) => rows.reduce((w, r) => Math.max(w, r.length), 0)
 const legMs = (m: Motion) => Math.max(1, Math.round(m.dur))
 
 function framesOf(f: Rows | Rows[]): Rows[] {
@@ -186,7 +184,7 @@ function shell(p: Place, ctx: SvgCtx, inner: string): string {
         values.push(0)
         times.push(b)
       }
-      anim = `<animate attributeName="opacity" values="${values.join(';')}" keyTimes="${times.map(fmt).join(';')}" calcMode="discrete" dur="${dur}ms" begin="${at(0)}" fill="${fill}"/>`
+      anim = `<animate attributeName="opacity" values="${values.join(';')}" keyTimes="${times.map(t => fmt(t)).join(';')}" calcMode="discrete" dur="${dur}ms" begin="${at(0)}" fill="${fill}"/>`
     }
     out = `<g opacity="0">${anim}${out}</g>`
   }
@@ -217,7 +215,7 @@ function flip(list: string[], tick: number, start: number, ctx: SvgCtx, hold: bo
       times.push(from(i + 1))
       values.push(0)
     }
-    return `<animate attributeName="opacity" values="${values.join(';')}" keyTimes="${times.map(fmt).join(';')}" calcMode="discrete" ${legTimed(ctx)}/>`
+    return `<animate attributeName="opacity" values="${values.join(';')}" keyTimes="${times.map(t => fmt(t)).join(';')}" calcMode="discrete" ${legTimed(ctx)}/>`
   }
   return list.map((f, i) => `<g${i ? ' opacity="0"' : ''}>${f}${anim(i)}</g>`).join('')
 }
@@ -454,7 +452,7 @@ export function fallOver(f: Fall): TrackDraw {
     const x = baseX(f, w) + (f.x ?? 0)
     const y = f.y ?? GROUND - h
     const times = [0, from, from + (to - from) * 0.25, from + (to - from) * 0.5, from + (to - from) * 0.75, to, 1]
-    const timing = `keyTimes="${times.map(fmt).join(';')}" ${legTimed(ctx)}`
+    const timing = `keyTimes="${times.map(t => fmt(t)).join(';')}" ${legTimed(ctx)}`
     const turn = FALL.map(k => `${fmt(k * angle)} ${fmt(px * PX)} ${fmt(py * PX)}`).join(';')
     const rise = FALL.map(k => `0 ${fmt(-k * lift * PX)}`).join(';')
     const lifted = lift ? `<animateTransform attributeName="transform" type="translate" values="${rise}" ${timing}/>` : ''

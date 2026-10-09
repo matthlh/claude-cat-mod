@@ -84,11 +84,12 @@ type Ctx = {
   /** left-facing rows turned the way the hero faces */
   face(rows: Rows): Rows
   /**
-   * The slots of the followers drawn and still at work (Pack.crew), nearest
-   * first: those an activity's join brings in, for a drawing that answers
+   * The slots of the followers this leg's join brings in (Activity.crew),
+   * nearest first: those drawn and still at work, when the pack has
+   * followers and the join says yes to the leg. For a drawing that answers
    * each of them (a hit for each, say). Absent or empty: none.
    */
-  crew?: readonly number[]
+  joining?: readonly number[]
 }
 
 /**
@@ -153,8 +154,8 @@ export type FollowUp = { activity: string; line?: string }
  * Followers: one for each agent of this session that is working, trailing
  * the hero along its path, the nearest first (engine/crew.ts). The engine
  * moves them; a pack only says how they look. Sprites face LEFT, like the
- * hero's, at most HERO_COLS wide and LANE_PIX tall (less a flyer's height),
- * and stand on the ground unless they fly.
+ * hero's, at most HERO_COLS wide and LANE_PIX tall (less a flyer's height
+ * and bob), and stand on the ground unless they fly.
  */
 export type Crew = {
   /** moving: two frames in turn */
@@ -171,7 +172,11 @@ export type Crew = {
   rest?: Pose
   /** colours by slot: the follower in slot n wears coats[n % coats.length] */
   coats: [Palette, ...Palette[]]
-  /** fly instead of walk: hover `height` sprite px above the ground, bobbing `bob` px (default 1) */
+  /**
+   * fly instead of walk: hover `height` sprite px above the ground, bobbing
+   * `bob` px higher every other 600 ms (default 1). The tallest sprite plus
+   * both must fit the terminal's LANE_PIX rows, or the top row is cut off.
+   */
   flying?: { height: number; bob?: number }
   /** sprite px between the hero and the first follower, and between followers (default 2) */
   gap?: number
@@ -243,8 +248,8 @@ export type Activity = {
   cues?: [number, string][]
   /** while it lasts, the usage line reads this instead */
   usageNote?: string
-  // Layers, bottom to top, the same on both surfaces: stage, target, draw,
-  // the hero, over.
+  // Layers, bottom to top, the same on both surfaces: stage, target, the
+  // followers (Pack.crew), draw, the hero, over.
   /** in the lane's own frame (pct and col place it), beneath everything else, while the leg lasts */
   stage?: Draw
   /** at the leg's destination, beneath the hero, while the leg lasts */

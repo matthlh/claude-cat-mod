@@ -6,6 +6,12 @@ export const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 // A number for SVG markup: at most two decimals, no trailing zeros.
 export const num = (n: number) => String(Math.round(n * 100) / 100)
 
+// A number for SMIL values and keyTimes: `digits` decimals at most, no trailing zeros.
+export const fmt = (n: number, digits = 3) => String(Number(n.toFixed(digits)))
+
+/** A sprite's width: its longest row. */
+export const widthOf = (rows: Rows) => rows.reduce((w, r) => Math.max(w, r.length), 0)
+
 export function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n))
 }

@@ -58,11 +58,13 @@ Everything the hero is and does comes from a pack. Switch packs from ⚙ → **P
 
   ![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime with its summons, working and asleep](docs/adventurer-preview.svg)
 
+  The Adventurer pack is fan-made and inspired by Terraria. It is not affiliated with or endorsed by Re-Logic, and Terraria is a trademark of Re-Logic. All of its pixel art is original.
+
 ## Your agents, on screen
 
-Each background agent you start shows up behind the hero for as long as it works: a kitten trotting after the cat, or a summoned minion following the adventurer (an imp, a slime, a hornet, a spider or a raven, by its place in the line, so each agent keeps its creature). Flyers hover, the rest keep to the ground. They join in, too: kittens pounce with the cat, and summons charge the foe in a fight, with a damage number for every hit. When an agent finishes, its follower hops and vanishes in a puff. Up to five are drawn, then "+N" (the terminal draws one for every 30 columns). Only this session's agents count; a workflow's agents are not counted. `/cat` shows how many are working.
+Each agent this session runs (a subagent, in the background or not, or a teammate while it is running) shows up behind the hero for as long as it works: a kitten trotting after the cat, or a summoned minion following the adventurer (an imp, a slime, a hornet, a spider or a raven, by its place in the line, so each agent keeps its creature). Flyers hover, the rest keep to the ground. They join in, too: kittens pounce with the cat, and summons charge the foe in a fight, with a damage number for every hit. When the hero turns they walk round to its back; near the edge of the lane, where there is no room behind it, they wait in front of it instead, and while it sleeps they settle past the foot of its bed. When an agent finishes, its follower hops and vanishes in a puff. Up to five are drawn, then "+N" (the terminal draws one for every 30 columns). Only this session's agents count; a workflow's agents are not counted. `/cat` shows how many are working.
 
-  The Adventurer pack is fan-made and inspired by Terraria. It is not affiliated with or endorsed by Re-Logic, and Terraria is a trademark of Re-Logic. All of its pixel art is original.
+![The five summons, each in its two idle frames and its attack, and beside the hero at lane size](docs/adventurer-minions.svg)
 
 ## Install
 
@@ -126,6 +128,11 @@ The last line type-checks the mod with the engine's strict settings (Claude Code
 
 1. Copy [`hooks/packs/adventurer/`](hooks/packs/adventurer) to `hooks/packs/<yours>/`. In its `index.ts`, rename the export (`export const yours: Pack`) and give it a new `id`, `label` and `noun`.
 2. Redraw the sprites, outfits and scenes, and change the activities. Each activity is drawn with the track helper in [`hooks/engine/track.ts`](hooks/engine/track.ts): a sprite, where it sits and how it moves over the leg, drawn the same on both surfaces.
+
+   The Adventurer's own sprites, every pose, tool, foe, block and prop, are on one sheet to start from:
+
+   ![The adventurer's poses, outfits, tools, foes, drops, blocks, props and damage numbers](docs/adventurer-sprites.svg)
+
 3. Register it in [`hooks/packs/index.ts`](hooks/packs/index.ts): `import { yours } from './<yours>/index'` and add it to `admit([cat, adventurer, yours])`.
 4. Check it:
 

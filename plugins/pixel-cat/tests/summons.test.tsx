@@ -11,6 +11,7 @@ import { SUMMON_ORDER, SUMMONS, summonFor } from '../hooks/packs/adventurer/summ
 import { packFor } from '../hooks/packs/index'
 import type { Palette } from '../hooks/packs/types'
 import type { Follower, HeroState, Motion } from '../types'
+import { pixelsOf } from './raster'
 
 // The Adventurer's summons: a minion for each agent at work (Pack.crew),
 // dashing at the foe in a fight, with a damage number for every hit.
@@ -27,33 +28,7 @@ const agents = (list: [string, string][]) => list.map(([id, status]) => ({ id, s
 const followersIn = (svg: string) => (svg.match(/<g transform="scale\(/g) ?? []).length
 const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-function decode(s: string): number[] {
-  const bytes: number[] = []
-  for (let i = 0; i < s.length; i += 4) {
-    const n = (B64.indexOf(s.charAt(i)) << 18) | (B64.indexOf(s.charAt(i + 1)) << 12) | ((B64.indexOf(s.charAt(i + 2)) & 63) << 6) | (B64.indexOf(s.charAt(i + 3)) & 63)
-    bytes.push((n >> 16) & 255)
-    if (s[i + 2] !== '=') bytes.push((n >> 8) & 255)
-    if (s[i + 3] !== '=') bytes.push(n & 255)
-  }
-  const out: number[] = []
-  const at = (i: number) => bytes[i] ?? 0
-  for (let i = 0; i + 3 < bytes.length; i += 4) out.push((at(i) | (at(i + 1) << 8) | (at(i + 2) << 16) | (at(i + 3) << 24)) >>> 0)
-  return out
-}
-// The terminal raster as sprite pixels: [x, y, colour] for each one drawn.
-function pixels(cells: string, cols = COLS): [number, number, number][] {
-  const c = decode(cells)
-  const out: [number, number, number][] = []
-  for (let i = 0; i < c.length / 3; i++) {
-    const [ch = 0, fg = 0, bg = 0] = c.slice(i * 3, i * 3 + 3)
-    const x = i % cols
-    const y = Math.floor(i / cols) * 2
-    if (ch === 0x2580) out.push([x, y, fg], [x, y + 1, bg])
-    if (ch === 0x2584) out.push([x, y + 1, fg])
-  }
-  return out
-}
+const pixels = (cells: string, cols = COLS) => pixelsOf(cells, cols)
 // The colours of a minion that nothing else in a fight is drawn in.
 const others = new Set([...Object.values(OUTFITS), MOB_PAL, TOOL_PAL, ITEM_PAL, ...Object.values(DAMAGE_PAL)].flatMap(p => Object.values(p)))
 const own = (pal: Palette) => new Set(Object.values(pal).filter(c => !others.has(c)))
@@ -83,7 +58,7 @@ test('0, 1, 3 and 9 agents: summons in every scene and activity, on both surface
         for (const k of [0.1, 0.4, 0.5, 0.9]) {
           for (const dir of [1, -1] as const) {
             const c: HeroState = { mood: activity === PACK.roles.work ? 'working' : 'idle', dir, say: k > 0.5 ? 'hi' : null, sayAt: NOW, prop: 'edit' }
-            const x = { crew, trail: { leg: { from: 0.8, to: 0.4, t0: NOW - 4000, dur: 3500 }, dir: -dir as 1 | -1 }, ctx: 40, hour: (i * 5) % 24 }
+            const x = { crew, trail: [{ leg: { from: 0.8, to: 0.4, t0: NOW - 4000, dur: 3500 }, dir: -dir as 1 | -1 }], ctx: 40, hour: (i * 5) % 24 }
             const at = NOW + k * m.dur
             const frame = laneSvg(PACK, c, m, at, COAT, scene, x)
             if (frame.length >= SVG_CAP) throw new Error(`${activity} in ${scene} with ${n} at ${k}: ${frame.length} chars`)
@@ -102,7 +77,9 @@ test('0, 1, 3 and 9 agents: summons in every scene and activity, on both surface
 })
 
 test("each slot is a kind of its own, and an agent keeps its minion while it keeps its slot", () => {
-  expect(SUMMON_ORDER).toEqual(['imp', 'slime', 'hornet', 'spider', 'raven', 'dragon'])
+  expect(SUMMON_ORDER).toEqual(['imp', 'slime', 'hornet', 'spider', 'raven'])
+  // One kind for each place in sight, so every kind is seen.
+  expect(SUMMON_ORDER.length).toBe(CREW_MAX)
   for (let slot = 0; slot < 12; slot++) {
     const kind = MINIONS[summonFor(slot)]
     const art = crewArt(SUMMONS, slot)
@@ -159,7 +136,7 @@ test('flyers hover behind the hero, walkers keep to the ground; in bed they all 
   expect(pixels(awake).some(([, , c]) => c === eye)).toBe(true)
   expect(pixels(asleep).some(([, , c]) => c === eye)).toBe(false)
   // The desktop: no hovering bob while the hero sleeps.
-  const bob = 'values="0 0;0 -3;0 0" dur="1.2s"'
+  const bob = 'values="0 0;0 -3" calcMode="discrete" dur="1200ms"'
   expect(laneSvg(PACK, { mood: 'idle', dir: -1, say: null }, sitting, NOW, COAT, 'forest', { crew: crewOf(2) })).toContain(bob)
   expect(laneSvg(PACK, { mood: 'sleep', dir: -1, say: null }, bed, NOW, COAT, 'forest', { crew: crewOf(2) })).not.toContain(bob)
 })
@@ -220,4 +197,20 @@ test('a damage number rises off the foe on every hit: the hero\'s, and each mini
   // A bow fight too.
   const shoot: Motion = { ...m, activity: 'shoot', dur: 2600 }
   expect(count(laneSvg(PACK, hero, shoot, NOW, COAT, 'night', { crew: crewOf(2) }), DAMAGE_PAL.white.N)).toBeGreaterThanOrEqual(2)
+})
+
+test('a flyer keeps its whole sprite on the terminal through its bob', () => {
+  const sitting: Motion = { from: 0.5, to: 0.5, t0: NOW - 5000, dur: 8000, activity: 'sit' }
+  // The imp: both its frames reach from the top row to the bottom one.
+  for (const [slot, id] of [[0, 'imp']] as const) {
+    const rows = new Set<number>()
+    for (let t = NOW; t < NOW + 1200; t += 100) {
+      const ys = columnsOf(laneCells(PACK, { mood: 'idle', dir: -1, say: null }, sitting, t, COAT, COLS, 'forest', { crew: [{ id: 'a', slot, since: 0 }] }), MINIONS[id].pal).map(([, y]) => y)
+      // Every row of the 8 drawn, top and bottom, at every moment.
+      expect(Math.max(...ys) - Math.min(...ys)).toBe(7)
+      rows.add(Math.min(...ys))
+    }
+    // It does bob: two heights.
+    expect(rows.size).toBe(2)
+  }
 })

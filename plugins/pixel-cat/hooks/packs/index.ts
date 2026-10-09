@@ -21,7 +21,7 @@ export function packProblems(pack: Pack): string[] {
     if (d && !(d[0] >= 0 && d[0] < d[1] && d[1] <= 1)) out.push(`activities.${id}.crew.during is [${d.join(', ')}], not a part of the leg from 0 to 1`)
   }
   for (const art of pack.crew ? crewArts(pack.crew) : []) {
-    const room = LANE_PIX - (art.flying?.height ?? 0)
+    const room = LANE_PIX - (art.flying ? art.flying.height + (art.flying.bob ?? 1) : 0)
     if (crewSprites(art).some(r => r.length > room || r.some(row => row.length > HERO_COLS))) out.push(`crew sprites must be at most ${HERO_COLS} wide and ${room} tall`)
   }
   if (!Object.hasOwn(pack.scenes, pack.defaults.scene)) out.push(`defaults.scene '${pack.defaults.scene}' is not one of its scenes`)

@@ -14,8 +14,10 @@ export type Extras = {
   hour?: number
   /** this session's working agents, drawn as the pack's followers (none when absent) */
   crew?: readonly Follower[]
-  /** the leg before this one, which followers are still finishing while their lag runs out */
-  trail?: Trail
+  /** the legs the hero walked before this one (engine/crew.ts extendTrail), which followers are still finishing while their lag runs out */
+  trail?: readonly Trail[]
+  /** desktop: the lane's width in CSS px, to keep the followers in it */
+  laneW?: number
 }
 
 export type Lane = {

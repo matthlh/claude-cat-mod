@@ -7,12 +7,12 @@
 // is outlined in a dark ink of its own colour (x) so it reads on any scenery.
 // Wherever there is a K it is an eye, and every palette has d, so closeEyes()
 // (engine/draw) gives any of them a happy squint, as it does the hero. At 8
-// rows tall, a flyer has two of the terminal's ten rows to hover in.
+// rows tall, a flyer has two of the terminal's ten rows to hover and bob in:
+// one off the ground, and one more on the bob's up step.
 
 import type { Palette, Rows } from '../types'
 
 export type Minion = {
-  label: string
   /** two frames shown in turn while it keeps the hero company */
   idle: [Rows, Rows]
   /** the frame it strikes in */
@@ -20,8 +20,6 @@ export type Minion = {
   pal: Palette
   /** true: it hovers off the ground; false: it keeps to the ground */
   flying: boolean
-  /** a ground minion that gets about in hops rather than steps */
-  bounce: boolean
   /** ms each idle frame shows */
   tick: number
 }
@@ -31,7 +29,6 @@ export type Minion = {
 // x ink, R body, r its shade, o glow, F flame core, f flame, h horn, e eye,
 // K pupil, m mouth.
 const IMP: Minion = {
-  label: 'Flame imp',
   idle: [
     [
       '...ff...',
@@ -69,50 +66,48 @@ const IMP: Minion = {
     h: 0x8a3a20, e: 0xfff6d8, K: 0x2a0e08, d: 0x2a0e08, m: 0x5a1408,
   },
   flying: true,
-  bounce: false,
   tick: 160,
 }
 
-// A baby jelly, a rosy drop with a curl on top and a darker heart inside:
-// squat on the ground, then tall as it springs. j body, J shine, c core,
-// x ink, e eye, K pupil.
+// A baby jelly, a rosy dome with a curl on top and a darker heart inside:
+// squat on the ground, then tall as it springs. Round shoulders, so it
+// reads as a blob and not a cone at lane size. j body, J shine, c core,
+// x ink, e eye, K pupil, m mouth.
 const SLIME: Minion = {
-  label: 'Baby slime',
   idle: [
     [
       '........',
       '........',
-      '....x...',
-      '...xjx..',
-      '..xJjjx.',
-      '.xjeKjjx',
+      '...x....',
+      '..xjxx..',
+      '.xJjjjx.',
+      'xJeKjjjx',
       'xjjjjccx',
       '.xxxxxx.',
     ],
     [
-      '....x...',
-      '...xjx..',
-      '..xJjjx.',
-      '..xeKjx.',
-      '..xjjjx.',
-      '..xjccx.',
-      '...xxx..',
+      '...x....',
+      '..xjx...',
+      '.xJjjx..',
+      '.xeKjjx.',
+      '.xjjjjx.',
+      '.xjjjcx.',
+      '..xxxx..',
       '........',
     ],
   ],
   attack: [
     '........',
-    '......xx',
-    '.....xjx',
-    '..xxxjjx',
-    '.xJjjjjx',
-    'xeKjjjcx',
-    'xmmjjccx',
+    '....x...',
+    '...xjxx.',
+    '..xJjjjx',
+    '.xeKjjjx',
+    'xmmjjjcx',
+    'xjjjjccx',
     '.xxxxxx.',
   ],
   pal: { x: 0x8a2a52, j: 0xf27aa6, J: 0xffe0ec, c: 0xd2508a, e: 0xffffff, K: 0x3a1024, d: 0x3a1024, m: 0x5a1430 },
   flying: false,
-  bounce: true,
   tick: 260,
 }
 
@@ -121,7 +116,6 @@ const SLIME: Minion = {
 // and drives forward to attack. a amber, A its shade, b band, w wing,
 // W wing edge, s stinger, x ink, e eye shine, K eye.
 const HORNET: Minion = {
-  label: 'Hornet',
   idle: [
     [
       '...WW...',
@@ -156,7 +150,6 @@ const HORNET: Minion = {
   ],
   pal: { x: 0x2a1a0a, a: 0xf2b630, A: 0xc0801a, b: 0x3a2a14, w: 0xeef6ff, W: 0xa8c4d8, s: 0x4a3418, e: 0xffffff, K: 0x161012, d: 0x161012, m: 0x6a4a20 },
   flying: true,
-  bounce: false,
   tick: 90,
 }
 
@@ -165,7 +158,6 @@ const HORNET: Minion = {
 // strike. f fur, F its light, b band, l leg, x ink, e eye shine, K eye,
 // m fang.
 const SPIDER: Minion = {
-  label: 'Spider',
   idle: [
     [
       '........',
@@ -200,109 +192,60 @@ const SPIDER: Minion = {
   ],
   pal: { x: 0x1c1418, f: 0xb0703f, F: 0xe09a5a, b: 0xf0dcb0, l: 0x9a6440, e: 0xffffff, K: 0x101014, d: 0x101014, m: 0xf2ece0 },
   flying: false,
-  bounce: false,
   tick: 120,
 }
 
-// A stout raven, blue-black with a sheen on its back, a pale eye glint and
-// a heavy beak; its wing beats up and down, then sweeps back for a diving peck.
+// A stout raven, round as a pigeon: a head with a pale eye glint and a
+// heavy beak, a blue-black body with a sheen, a wing that beats up and down,
+// and tucked feet; it sweeps the wing back for a diving peck. A head, a beak
+// and feet of its own, so it reads as a bird and not a dark wedge.
 // k body, S its sheen, w wing, W its light, x ink, e eye glint, y beak,
 // Y its shade.
 const RAVEN: Minion = {
-  label: 'Raven',
   idle: [
     [
-      '.....x..',
-      '....xWx.',
-      '...xwWx.',
-      '.xxkwWxx',
-      'yekkkkSx',
-      'Yxkkkkkx',
-      '.xxxxkkx',
       '.....xx.',
+      '..xxxWWx',
+      '.xkkxwWx',
+      'xekkkxwx',
+      'yykkkkSx',
+      '.xkkkkkx',
+      '..xkkkx.',
+      '...x.x..',
     ],
     [
       '........',
-      '........',
-      '........',
-      '.xxxxxxx',
-      'yekkkWWx',
-      'YxkkwWWx',
-      '.xxxxwkx',
-      '....xxx.',
+      '..xxx...',
+      '.xkkkxxx',
+      'xekkWWWx',
+      'yykkwWWx',
+      '.xkkkwwx',
+      '..xkkkx.',
+      '...x.x..',
     ],
   ],
   attack: [
-    '......x.',
-    '.....xWx',
-    '....xwWx',
-    '..xxkwx.',
-    '.xekkkSx',
-    'yYkkkkkx',
-    'Y.xxxxkx',
     '......xx',
+    '..xxxxWx',
+    '.xkkxwWx',
+    'xekkkwxx',
+    'yykkkkSx',
+    'Y.xkkkkx',
+    '...xkkx.',
+    '....x.x.',
   ],
-  pal: { x: 0x0e0e18, k: 0x484e78, S: 0x7a8cc4, w: 0x343858, W: 0x6470a0, e: 0xf2e6a8, d: 0x0e0e18, y: 0x9a9aa8, Y: 0x5a5a68 },
+  pal: { x: 0x0e0e18, k: 0x3c4268, S: 0x7a8cc4, w: 0x2c3050, W: 0x6a78b0, e: 0xffffff, d: 0x0e0e18, y: 0xd0ccbc, Y: 0x7a7868 },
   flying: true,
-  bounce: false,
   tick: 150,
 }
 
-// A small dragon: a chubby teal wyrmling with a cream belly, a nubby
-// horn, little wings that beat, and a curled tail; it breathes a puff of
-// flame to attack. g scales, G their shade, c belly, h horn, w wing,
-// x ink, e eye, K pupil, f flame, F its core.
-const DRAGON: Minion = {
-  label: 'Small dragon',
-  idle: [
-    [
-      '.h...ww.',
-      'xgx.wWWx',
-      'xeKgxwx.',
-      'xgggggx.',
-      '.xxcgGGx',
-      '..xccGxG',
-      '..xGxGGx',
-      '...x..x.',
-    ],
-    [
-      '.h......',
-      'xgx.....',
-      'xeKgxxx.',
-      'xgggwwwx',
-      '.xxcgwWx',
-      '..xccGxG',
-      '..xGxGGx',
-      '...x..x.',
-    ],
-  ],
-  attack: [
-    '.h...ww.',
-    'xgx.wWWx',
-    'xeKgxwx.',
-    'Ffggggx.',
-    'fFxcgGGx',
-    'f.xccGxG',
-    '..xGxGGx',
-    '...x..x.',
-  ],
-  pal: {
-    x: 0x0e2a2a, g: 0x3cb8a0, G: 0x23806e, c: 0xf2e2b0, h: 0xf2e2b0, w: 0x8ad8c8, W: 0x2a8a78,
-    e: 0xffffff, K: 0x102020, d: 0x102020, f: 0xff8a2e, F: 0xffe07a,
-  },
-  flying: true,
-  bounce: false,
-  tick: 140,
-}
-
-// In the order a summon menu would list them.
+// In the order the slots take them: five, one for each place in sight (CREW_MAX).
 export const MINIONS = {
   imp: IMP,
   slime: SLIME,
   hornet: HORNET,
   spider: SPIDER,
   raven: RAVEN,
-  dragon: DRAGON,
 } satisfies Record<string, Minion>
 
 export type MinionId = keyof typeof MINIONS

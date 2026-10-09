@@ -1,4 +1,5 @@
 import type { Motion } from '../../types'
+import type { Dir } from '../packs/types'
 import { clamp01 } from './draw'
 
 // Bedtime's two legs, kept as activity ids so the state contract is
@@ -23,4 +24,14 @@ export function posAt(m: Motion, now: number): number {
 
 export function isWalking(m: Motion, now: number): boolean {
   return m.from !== m.to && now < m.t0 + m.dur
+}
+
+/** The same leg: a state write that changed nothing about where the hero goes. */
+export function sameLeg(a: Motion, b: Motion): boolean {
+  return a.t0 === b.t0 && a.dur === b.dur && a.from === b.from && a.to === b.to && a.activity === b.activity
+}
+
+/** Which way the hero faces on a leg: the way it walks, or `dir` (HeroState.dir) on the spot. */
+export function legDir(m: Motion, dir: Dir): Dir {
+  return m.to > m.from ? 1 : m.to < m.from ? -1 : dir
 }
