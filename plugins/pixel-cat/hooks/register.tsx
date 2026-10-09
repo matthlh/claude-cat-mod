@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Follower, HeroState, Identity, Limits, Look, Mood, Motion, Phase, Prefs, Speed, Stats, ToolProp } from '../types'
+import type { Follower, HeroState, Identity, Limits, Look, Mode, Mood, Motion, Phase, Prefs, Speed, Stats, ToolProp } from '../types'
 import { nextLeg, planLeg, strollPace } from './engine/brain'
 import { laneCells as drawCells } from './engine/cells'
 import { CREW_MAX, extendTrail, isWorking, muster, terminalCap, workingCount } from './engine/crew'
@@ -170,6 +170,68 @@ async function setPrefs($: EngineInterface, fn: (p: Prefs) => Prefs) {
   await $.store.set('prefs', await read($, prefs))
 }
 
+// ── The mod switcher ─────────────────────────────────────────────────────
+// One ↻ button (and /mods) walks a loop of stops: each pack of this mod, then
+// Token Tycoon, a separate mod this one drives through its /tycoon command,
+// then off, where only a one-line strip is drawn to come back from. The stop
+// is saved with the prefs, so a new session opens where the last one left.
+
+type Stop = { id: string; label: string; mode: Mode; pack?: Pack }
+const TYCOON: Stop = { id: 'tycoon', label: 'Token Tycoon', mode: 'tycoon' }
+const OFF: Stop = { id: 'off', label: 'Off', mode: 'off' }
+
+function modeOf(p: Prefs): Mode {
+  return p.mode ?? 'hero'
+}
+
+// Whether Token Tycoon is installed: it registers /tycoon. The band asks on
+// every redraw, so the answer is kept for a few seconds.
+let tycoonSeenAt = -Infinity
+let tycoonSeen = false
+async function hasTycoon($: EngineInterface, now: number): Promise<boolean> {
+  if (now - tycoonSeenAt < 5000) return tycoonSeen
+  tycoonSeenAt = now
+  try {
+    tycoonSeen = (await $.command.list()).some(c => c.name === 'tycoon')
+  } catch {
+    tycoonSeen = false
+  }
+  return tycoonSeen
+}
+
+function stops(withTycoon: boolean): [Stop, ...Stop[]] {
+  const packs = Object.values(PACKS).map((pack): Stop => ({ id: pack.id, label: pack.label, mode: 'hero', pack }))
+  const all = [...packs, ...(withTycoon ? [TYCOON] : []), OFF]
+  return [all[0] ?? OFF, ...all.slice(1)]
+}
+
+// The stop the prefs name; Token Tycoon's with it gone counts as off, so the
+// strip is there to come back from.
+function stopOf(list: [Stop, ...Stop[]], p: Prefs): Stop {
+  const mode = modeOf(p)
+  const found = list.find(s => (mode === 'hero' ? s.mode === 'hero' && s.pack?.id === p.pack : s.mode === mode))
+  return found ?? (mode === 'tycoon' ? OFF : list[0])
+}
+
+async function switchTo($: EngineInterface, stop: Stop, withTycoon: boolean) {
+  await setPrefs($, p => ({ ...(stop.pack ? withPack(p, stop.pack) : p), mode: stop.mode }))
+  if (stop.mode === 'hero') await update($, isHidden, () => false)
+  // Token Tycoon follows: out for its own stop, put away for every other.
+  if (withTycoon) {
+    try {
+      await $.command.run({ command: 'tycoon', args: stop.mode === 'tycoon' ? 'on' : 'off' })
+    } catch {
+      // Gone since it was last seen; nothing to put away.
+    }
+  }
+}
+
+function pickStop(list: [Stop, ...Stop[]], current: Stop, want: string): Stop | undefined {
+  const w = want.trim().toLowerCase()
+  if (!w || w === 'next') return nextOf(list, current)
+  return list.find(s => s.id === w || s.label.toLowerCase().startsWith(w))
+}
+
 // ── Hooks ────────────────────────────────────────────────────────────────
 
 export const register: Register = on => {
@@ -200,6 +262,10 @@ export const register: Register = on => {
     await $.command.register({
       name: 'cat',
       description: 'Show or hide the pixel pet above the prompt (and see your usage limits)',
+    })
+    await $.command.register({
+      name: 'mods',
+      description: 'Switch what shows above the prompt: cat, adventurer, tycoon or off (alone: the next one)',
     })
     lastActivity = await $.clock.now()
     sayUntil = lastActivity + 5000
@@ -511,6 +577,28 @@ export const register: Register = on => {
     }
   })
 
+  on('command.run', { command: 'mods' }, async ($, e) => {
+    const list = stops(await hasTycoon($, await $.clock.now()))
+    const current = stopOf(list, await read($, prefs))
+    const pick = pickStop(list, current, e.args)
+    if (!pick) return { text: `No mod called "${e.args.trim()}". Mods: ${list.map(s => s.label).join(', ')}.` }
+    await switchTo($, pick, list.includes(TYCOON))
+    if (pick.pack) await wake('pet', pick.pack.text.hello, 2500)
+    return {
+      text: [
+        `Showing: ${pick.label}.`,
+        `Mods: ${list.map(s => (s === pick ? `[${s.label}]` : s.label)).join(' → ')}`,
+        '/mods alone moves to the next one, /mods <name> picks one, and the ↻ button above the prompt does the same.',
+      ].join('\n'),
+    }
+  })
+  on('ui.press', { plugin: 'pixel-cat', element: 'cycle' }, async $ => {
+    const list = stops(await hasTycoon($, await $.clock.now()))
+    const pick = nextOf(list, stopOf(list, await read($, prefs)))
+    await switchTo($, pick, list.includes(TYCOON))
+    if (pick.pack) await wake('pet', pick.pack.text.hello, 2500)
+    return { element: 'cycle' }
+  })
   on('ui.press', { plugin: 'pixel-cat', element: 'pet' }, async $ => {
     const { text } = await activePack($)
     const asleep = (await read($, cat)).mood === 'sleep'
@@ -579,12 +667,29 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
 
-    const { Box, Text, Button, Raster, Svg } = $.ui.resolve(e) as any
     const now = await $.clock.now()
+    const pr = await read($, prefs)
+    // Where the switcher stands: on Token Tycoon's stop this band draws
+    // nothing, and on off only the strip that brings the next mod back.
+    const list = stops(await hasTycoon($, now))
+    const stop = stopOf(list, pr)
+    const after = nextOf(list, stop)
+    if (stop.mode === 'tycoon') {
+      site = null
+      return next(e)
+    }
+    const { Box, Text, Button, Raster, Svg } = $.ui.resolve(e) as any
+    if (stop.mode === 'off') {
+      site = null
+      return (
+        <Box paddingX={1}>
+          <Button key="cycle" label={`↻ ${after.label}`} plain dimColor onPress={ignorePress} />
+        </Box>
+      )
+    }
     const c = await read($, cat)
     const m = await read($, motion)
     const l = await read($, limits)
-    const pr = await read($, prefs)
     const isSetting = await read($, isSettingsOpen)
     const who = await read($, identity)
     const st = await read($, stats)
@@ -658,6 +763,7 @@ export const register: Register = on => {
           <Box flexDirection="row" columnGap={1} flexShrink={0}>
             <Button key="pet" label="Pet ♥" onPress={ignorePress} />
             <Button key="settings" label={isSetting ? 'Done' : '⚙'} onPress={ignorePress} />
+            <Button key="cycle" label={`↻ ${after.label}`} onPress={ignorePress} />
             <Button key="hide" label="Hide" onPress={ignorePress} />
           </Box>
         </Box>

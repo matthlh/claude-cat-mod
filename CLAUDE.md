@@ -29,3 +29,12 @@ Try a plugin in a session with `claude --plugin-dir plugins/<name>` and `CLAUDE_
 - `plugins/<name>/.claude-plugin/plugin.json`: the plugin manifest. `.claude-plugin/types/` is generated and ignored.
 - `plugins/pixel-cat/hooks/engine/` is the lane machinery, `hooks/packs/<pack>/` is one character each (cat, adventurer). See its README for how to add a pack.
 - `plugins/purple-dark/themes/purple-dark.json` is the theme; plugin themes are read-only, shown in `/theme` under the file's `name`.
+
+## How the mods talk to each other
+
+Plugins can read each other's `$.state` but never write it, so the mods coordinate through slash commands run with `$.command.run` (a plugin's call goes through every other plugin's `command.run` hooks):
+
+- `pixel-cat` owns the ↻ switcher (`/mods`, `prefs.mode`: `hero`, `tycoon` or `off`). It finds Token Tycoon by looking for a registered `tycoon` command, and drives it with `/tycoon on` or `/tycoon off`.
+- `token-tycoon` answers `/tycoon` (remembered in `prefs.shown`) and its own ↻ runs `/mods off` when a `mods` command exists, else just hides itself.
+
+Keep those two command names and their `on`/`off` arguments stable; each mod must also work with the other absent. In tests, a catch-all `command.run` hook is skipped for calls made from inside a run it is part of, so match the hook to the command you want to observe.

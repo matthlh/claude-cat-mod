@@ -22,7 +22,11 @@ export type Save = {
 export type FxKind = 'click' | 'free' | 'crit' | 'buy' | 'frenzy' | 'offline' | null
 export type Fx = { at: number; gain: number; kind: FxKind }
 
-export type Prefs = { popups: boolean }
+export type Prefs = {
+  popups: boolean
+  /** whether the band is out at session start; /tycoon and the ↻ switcher set it (absent: out) */
+  shown?: boolean
+}
 export type Mood = 'idle' | 'working' | 'sleep' | 'oops'
 
 declare module 'claude-code' {
