@@ -1,6 +1,42 @@
 {
   "name": "matthlh",
-  "owner": { "name": "matthlh" },
-  "description": "Claude Code mods by matthlh",
-  "plugins": [{ "name": "pixel-cat", "source": "./" }]
+  "owner": {
+    "name": "matthlh"
+  },
+  "description": "Claude Code mods by matthlh: a pixel cat, an idle game and a purple theme",
+  "plugins": [
+    {
+      "name": "pixel-cat",
+      "source": "./plugins/pixel-cat",
+      "description": "A little pixel cat that wanders above the prompt, watches your usage limits and announces when work finishes; or switch packs for an adventurer who mines, chops trees and fights zombies",
+      "category": "fun",
+      "tags": [
+        "mod",
+        "pixel-art",
+        "cat",
+        "adventurer"
+      ]
+    },
+    {
+      "name": "token-tycoon",
+      "source": "./plugins/token-tycoon",
+      "description": "A Claude-themed idle game above the prompt: prompt a task block to clear it, hire agents, upgrade models and infra, and earn from your real Claude Code usage",
+      "category": "fun",
+      "tags": [
+        "mod",
+        "idle-game"
+      ]
+    },
+    {
+      "name": "purple-dark",
+      "source": "./plugins/purple-dark",
+      "description": "A purple dark colour theme for Claude Code",
+      "category": "themes",
+      "tags": [
+        "theme",
+        "dark",
+        "purple"
+      ]
+    }
+  ]
 }

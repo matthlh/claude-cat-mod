@@ -1,0 +1,25 @@
+{
+  "name": "Purple Dark",
+  "base": "dark",
+  "overrides": {
+    "claude": "rgb(176,132,255)",
+    "claudeShimmer": "rgb(210,180,255)",
+    "promptBorder": "rgb(120,96,180)",
+    "promptBorderShimmer": "rgb(170,146,230)",
+    "permission": "rgb(150,110,255)",
+    "permissionShimmer": "rgb(190,160,255)",
+    "suggestion": "rgb(170,140,255)",
+    "subtle": "rgb(140,125,175)",
+    "inactive": "rgb(110,98,140)",
+    "userMessageBackground": "rgb(34,26,52)",
+    "userMessageBackgroundHover": "rgb(42,32,64)",
+    "composerSidebarBackground": "rgb(26,20,40)",
+    "bashMessageBackgroundColor": "rgb(30,24,46)",
+    "memoryBackgroundColor": "rgb(36,26,58)",
+    "selectionBg": "rgb(90,60,150)",
+    "rate_limit_fill": "rgb(176,132,255)",
+    "rate_limit_empty": "rgb(50,38,80)",
+    "briefLabelClaude": "rgb(176,132,255)",
+    "briefLabelYou": "rgb(130,170,255)"
+  }
+}

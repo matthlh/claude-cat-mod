@@ -1,90 +1,92 @@
-# Claude Cat Mod 🐱
+# Claude Code mods by matthlh
 
-A tiny pixel-art cat that lives above your [Claude Code](https://claude.com/claude-code) prompt. It wanders around, watches your usage limits, and tells you when Claude finishes.
+Three mods for [Claude Code](https://claude.com/claude-code), served from one plugin marketplace: a pixel cat and an idle game that live above the prompt, and a purple theme.
 
-![Claude cat poses: walk, walk 2, sit, happy, sleep](docs/preview.svg)
-
-## What it does
-
-- **Wanders** back and forth above the prompt, sits down now and then, and blinks.
-- **Works alongside Claude**, with a speech bubble showing the current tool (`‹Bash…›`) and a prop to match: a book for reading files, a laptop it types on for edits, a terminal for shell commands, a magnifying glass for searches. Between tools it runs around.
-- **Announces when a turn finishes** (`‹done! 42s›`), plus a toast for turns longer than 20 seconds.
-- **Reacts to failures** with a `>.<` face when a tool call errors.
-- **Food bowl = context:** a bowl at the right end empties as the conversation fills up. Near the limit the cat mentions it; when the conversation is compacted, the bowl refills ("nom nom!").
-- **Tracks your limits:** shows your 5-hour, 7-day and context usage in green, yellow or red. It gets sleepy at 80% of the 5-hour limit and sends a toast at 75% and 90%.
-- **Keeps itself busy while you're idle**, mostly calmly (strolling, sitting, grooming itself, napping), with play now and then:
-  - chases a ball of yarn, follows a butterfly, hops around, and takes little cat naps
-  - hunts a mouse, and sometimes pins it under a paw (before it wriggles free and runs off)
-  - stalks a bird, pounces ("nom?!"), and watches it fly away
-  - goes fishing: a fishbowl, a fish tank or a river, depending on the scene, and sometimes catches one
-  - chases a laser pointer dot back and forth until it vanishes ("where'd it go?")
-  - **mischief:** finds a mug on a table, taps it… and knocks it off ("*CRASH*", "oops :3"), or sits right on top of your usage stats until you pet it
-  - **at night** (11pm–6am) it mostly naps
-
-  ![Props for each tool, hats, a shiny cat, a mug about to be knocked off, and the cat sitting on your stats](docs/working.svg)
-
-  ![The cat chasing yarn, hunting a mouse, following a butterfly, working and done](docs/play.svg)
-
-  ![Each scene: fishing at a fishbowl, stalking a bird, chasing a laser dot, fishing at a fish tank](docs/scenes.svg)
-- **Goes to bed on its perch** after 5 minutes of inactivity, or when your 5-hour limit runs out. The perch slides in from the left (a cat bed, a tree stump, a cloud or a cat tree, depending on the scene), the cat walks over, hops up and curls up. On your next prompt it wakes and the perch slides away.
-
-  ![The four perches: a cat bed, a tree stump, a cloud and a cat tree](docs/bedtime.svg)
-- **Speech bubbles** that type themselves out, with animated dots, hearts and sparkles.
-- **Little animations** in between: tail wags, ear twitches, a shake when something fails, and drifting z's while it naps.
-- **Your own cat:** each install rolls a marking (a white blaze, socks, a tail tip or a spot) and has a 1 in 50 chance of being ✨ shiny, with sparkles. `/cat` shows yours.
-- **Hats to unlock:** a party hat at 10 finished tasks, a beanie at 100 tool calls, a crown at 150 tasks and a wizard hat at 500 tool calls. You get a popup when one unlocks; wear it from ⚙ → Hat.
-- **Time of day:** the Grass scene gets dawn, dusk and starry-night skies, the Cozy room gets a window showing the sky outside (with the moon at night), and Clear shows a few stars at night.
-- **Pet ♥** button (it purrs, with floating hearts, and wakes up if it was asleep) and **Hide** button.
-- **⚙ Settings**, saved across sessions:
-  - **Coat:** Orange, Tuxedo, Black, Grey, Cream or Sakura
-
-    ![The six coats](docs/coats.svg)
-
-  - **Speed:** Chill, Normal or Zoomies
-  - **Scene:** Clear (follows your light/dark theme), Grass, Night or Cozy. The scene also picks the perch and the fishing spot.
-  - **Popups:** on or off
-  - **Hat:** any you've unlocked
-  - **Usage:** show or hide the limit numbers
-- **`/cat`** toggles it and prints your current limits and when the 5-hour window resets.
-
-In the Claude desktop app the whole lane is one SVG that animates itself (smooth gliding, leg and tail frames, blinks, floating hearts and z's), so the mod only redraws when the cat changes what it's doing. In the terminal the lane is a cell grid of colored half blocks, repainted in place 10 times a second.
+| Plugin | What it is |
+| --- | --- |
+| [`pixel-cat`](plugins/pixel-cat) | A little pixel cat that wanders above the prompt, watches your usage limits and announces when work finishes. Not a cat person? Switch packs and an adventurer mines, chops trees and fights zombies there instead |
+| [`token-tycoon`](plugins/token-tycoon) | A Claude-themed idle game: prompt to earn tokens, hire agents, upgrade models and infra, and earn from your real Claude Code usage |
+| [`purple-dark`](plugins/purple-dark) | A purple dark colour theme |
 
 ## Install
 
-You need a Claude Code version that supports mods (October 2026 or later). The same steps work on macOS, Linux and Windows. At the Claude Code prompt, type:
+You need a Claude Code version that supports mods (October 2026 or later). The same steps work on macOS, Linux and Windows, in the terminal and in the desktop app. At the Claude Code prompt, add the marketplace once, then install what you want:
 
 ```
-/plugin install pixel-cat --marketplace matthlh/claude-cat-mod
+/plugin marketplace add matthlh/claude-mods
+/plugin install pixel-cat@matthlh
+/plugin install token-tycoon@matthlh
+/plugin install purple-dark@matthlh
 ```
-
-Answer `y` to add the marketplace, then press Enter to install it for your user. The cat shows up right away, and in every new session after that, desktop app included.
 
 Or from a shell:
 
 ```bash
-claude plugin marketplace add matthlh/claude-cat-mod
+claude plugin marketplace add matthlh/claude-mods
 claude plugin install pixel-cat@matthlh
 ```
 
-Update with `claude plugin update pixel-cat@matthlh`, remove with `claude plugin uninstall pixel-cat@matthlh`.
+Two things to know:
 
-**No cat?** Mods are still rolling out. Add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block of `~/.claude/settings.json` and start a new session.
+- **Mods need function hooks.** They're still rolling out, so if nothing shows up above the prompt, add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block of `~/.claude/settings.json`:
 
-### From a clone
+  ```json
+  {
+    "env": {
+      "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
+    }
+  }
+  ```
 
-To change the cat, run your own copy instead:
+- **Restart after changing settings.** Sessions already open pick up a new plugin or env change only after a restart. In the desktop app, quit it fully (⌘Q), not just the window.
+
+The theme needs no env flag: after installing `purple-dark`, pick **Purple Dark** in `/theme`.
+
+Update a mod with `claude plugin update <name>@matthlh`, remove it with `claude plugin uninstall <name>@matthlh`.
+
+## The mods
+
+### Pixel Cat 🐱
+
+![Claude cat poses: walk, walk 2, sit, happy, sleep](plugins/pixel-cat/docs/preview.svg)
+
+Wanders back and forth above the prompt, works alongside Claude with a prop for each tool, announces when a turn finishes, tracks your 5-hour, 7-day and context limits, plays when you're idle and goes to bed on its perch when you're away. Coats, scenes, hats to unlock, and `/cat` to toggle it.
+
+Everything the hero is and does comes from a **pack**, switched from ⚙ → Pack. The **Adventurer** pack swaps the cat for a Terraria-style hero who mines ore, chops trees, builds walls and staircases, crafts at a workbench and fights zombies and slimes, in a world that goes dark at night:
+
+![The adventurer mining, chopping, building, crafting, fighting a zombie and a slime, working and asleep](plugins/pixel-cat/docs/adventurer-preview.svg)
+
+The Adventurer pack is fan-made and inspired by Terraria. It is not affiliated with or endorsed by Re-Logic, and Terraria is a trademark of Re-Logic. All of its pixel art is original.
+
+[Read more](plugins/pixel-cat/README.md), including how to make your own pack.
+
+### Token Tycoon 🤖
+
+![The coder and the token: idle, a prompt landing, a crit, a frenzy](plugins/token-tycoon/docs/preview.svg)
+
+Cookie Clicker, but the cookie is a token. Prompt ⚡ to earn, hire agents that earn per second, upgrade models and infra, and let your real Claude Code work count: every tool call is a free prompt and every finished turn starts a frenzy. `/idle` opens the shop. [Read more](plugins/token-tycoon/README.md).
+
+### Purple Dark 💜
+
+![Purple Dark: the prompt box, a user message and Claude's label in the theme colours](plugins/purple-dark/docs/preview.svg)
+
+A purple take on the dark theme: lavender accent, violet borders, deep purple message backgrounds. [Read more](plugins/purple-dark/README.md).
+
+## Run from a clone
+
+To change a mod, run your own copy instead of the marketplace install:
 
 ```bash
-git clone https://github.com/matthlh/claude-cat-mod ~/.claude/mods/pixel-cat
-claude --plugin-dir ~/.claude/mods/pixel-cat
+git clone https://github.com/matthlh/claude-mods ~/.claude/mods/claude-mods
+claude --plugin-dir ~/.claude/mods/claude-mods/plugins/pixel-cat
 ```
 
-To load the clone in every session, including the desktop app, put its full path in the `env` block of `~/.claude/settings.json`:
+To load it in every session, including the desktop app, put the plugin folder's full path in the `env` block of `~/.claude/settings.json`:
 
 ```json
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/pixel-cat",
+    "CLAUDE_CODE_PLUGIN_DIRS": "/Users/<you>/.claude/mods/claude-mods/plugins/pixel-cat",
     "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"
   }
 }
@@ -92,32 +94,33 @@ To load the clone in every session, including the desktop app, put its full path
 
 | OS | Path | Separator for several folders |
 | --- | --- | --- |
-| macOS | `/Users/<you>/.claude/mods/pixel-cat` | `:` |
-| Linux | `/home/<you>/.claude/mods/pixel-cat` | `:` |
-| Windows | `C:\\Users\\<you>\\.claude\\mods\\pixel-cat` (JSON needs the doubled `\\`) | `;` |
+| macOS | `/Users/<you>/.claude/mods/claude-mods/plugins/pixel-cat` | `:` |
+| Linux | `/home/<you>/.claude/mods/claude-mods/plugins/pixel-cat` | `:` |
+| Windows | `C:\\Users\\<you>\\.claude\\mods\\claude-mods\\plugins\\pixel-cat` (JSON needs the doubled `\\`) | `;` |
 
-Write the full path. Older versions don't expand `~` here, so `~/.claude/mods/pixel-cat` silently loads nothing. Sessions already open when you change settings pick it up only after a restart.
+Write the full path. Older versions don't expand `~` here, so a `~` path silently loads nothing. Don't run a clone and the marketplace install of the same mod at once.
 
-## Customize
+## Develop
 
-The sprites are 12×10 grids of letters in [`hooks/register.tsx`](hooks/register.tsx):
-
-| Letter | Color |
-| --- | --- |
-| `o` | fur (Claude orange) |
-| `d` | shade |
-| `H` / `K` | eye shine / eye |
-| `r` | blush |
-| `n` | nose |
-| `w` | chest |
-
-Edit the grids or the `PALETTE` to make a tuxedo, calico or black cat. In an interactive session, saving the file hot-reloads the mod.
-
-Check your changes with:
+Each mod is a plugin of function hooks under `plugins/<name>/`, with its tests beside it. Check a change with:
 
 ```bash
-claude plugin validate ~/.claude/mods/pixel-cat
-claude plugin test ~/.claude/mods/pixel-cat
+claude plugin validate .                       # the marketplace
+claude plugin validate plugins/pixel-cat       # one plugin
+claude plugin test plugins/pixel-cat           # its tests
 ```
 
-The tests draw the band on the desktop and terminal surfaces, press the buttons, and draw every activity and perch in every scene, so a drawing the engine would refuse fails there instead of silently disappearing.
+In an interactive session that loads the clone, saving a hooks file hot-reloads the mod.
+
+## Layout
+
+```
+.claude-plugin/marketplace.json   the marketplace: one entry per plugin
+plugins/pixel-cat/                hooks (engine + packs), tests, types, docs, README
+plugins/token-tycoon/             hooks, tests, types, docs, README
+plugins/purple-dark/              themes/purple-dark.json, docs, README
+```
+
+## License
+
+MIT
