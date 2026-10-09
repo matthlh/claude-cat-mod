@@ -8,6 +8,19 @@ One marketplace (`matthlh`), three Claude Code plugins under `plugins/`: `pixel-
 - Move files with plain `git mv` commits, content edits in separate commits, so rename detection carries other branches across.
 - Don't add a `CLAUDE.md` inside a plugin folder; the validator warns and it isn't loaded. This file is the only one.
 - Plain commit messages, no attribution trailers.
+- Bump `version` in a plugin's `plugin.json` with every change that should reach installs. The version pins the install: `claude plugin update` says "already at the latest version" and fetches nothing until it changes.
+
+## Branches
+
+`main` only moves by pull request. Each mod has a long-lived branch of its own, `pixel-cat`, `token-tycoon` and `purple-dark`, and work on a mod goes there:
+
+```bash
+git checkout pixel-cat && git merge --ff-only origin/main   # start level with main
+# ...commit...
+git push && gh pr create --base main --head pixel-cat
+```
+
+After the PR merges, fast-forward the mod branch to `main` again before the next change. A change that touches two mods at once (the ↻ switcher was one) gets a topic branch and one PR. Bump the plugin's `version` in the same PR.
 
 ## Check a change
 

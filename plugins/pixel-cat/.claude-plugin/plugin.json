@@ -1,6 +1,6 @@
 {
   "name": "pixel-cat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A little pixel cat that wanders above the Claude Code prompt, watches your usage limits and announces when work finishes; or switch packs for an adventurer who mines, chops trees and fights zombies",
   "author": {
     "name": "matthlh"
