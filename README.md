@@ -44,6 +44,14 @@ The theme needs no env flag: after installing `purple-dark`, pick **Purple Dark*
 
 Update a mod with `claude plugin update <name>@matthlh`, remove it with `claude plugin uninstall <name>@matthlh`.
 
+## Switching between them
+
+You don't have to remember any commands. The cat's band has a **↻** button that walks a loop: **Cat → Adventurer → Token Tycoon → Off → Cat**, and the label always says where the next press goes. On Token Tycoon's turn the cat steps aside and the game's band gets a **↻ Off** of its own; on Off, all that's left is a one-line **↻ Cat** strip to come back from. The stop is remembered, so a new session opens where you left it.
+
+The same loop as commands, for when you'd rather type: `/mods` moves to the next stop, `/mods cat`, `/mods adventurer`, `/mods tycoon` or `/mods off` picks one. `/cat` and `/tycoon` show or hide one mod for this session without touching the loop, and `/idle` opens the Token Tycoon shop.
+
+The theme isn't part of the loop: pick **Purple Dark** in `/theme` once and it stays.
+
 ## The mods
 
 ### Pixel Cat 🐱

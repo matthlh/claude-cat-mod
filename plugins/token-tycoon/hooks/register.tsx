@@ -476,6 +476,13 @@ async function commit($: EngineInterface, s: Save) {
   await update($, save, () => s)
   dirty = true
 }
+// Out or away, remembered across sessions.
+async function show($: EngineInterface, out: boolean) {
+  await update($, isHidden, () => !out)
+  await update($, prefs, p => ({ ...p, shown: out }))
+  await $.store.set('prefs', await read($, prefs))
+}
+
 async function persist($: EngineInterface) {
   const s = await read($, save)
   const stamped = { ...earn(s, pending), played: (s.played ?? 0) + playedAcc, savedAt: await $.clock.now() }
@@ -571,10 +578,13 @@ function summary(s: Save, now: number): string[] {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'idle', description: 'Open the Token Tycoon shop (and show your progress)' })
+    await $.command.register({ name: 'tycoon', description: 'Put Token Tycoon away or bring it back above the prompt (on, off, or alone to flip)' })
 
     const stored = (await $.store.get('save')) as Partial<Save> | undefined
     const p = (await $.store.get('prefs')) as Partial<Prefs> | undefined
     if (p) await update($, prefs, x => ({ ...x, ...p }))
+    // Put away last time (by /tycoon off or the cat's ↻ switcher): stay away.
+    if (p?.shown === false) await update($, isHidden, () => true)
     const now = await $.clock.now()
     lastActivity = now
     let s: Save = {
@@ -674,6 +684,32 @@ export const register: Register = on => {
   on('ui.press', { plugin: 'token-tycoon', element: 'hide' }, async $ => {
     await update($, isHidden, () => true)
     return { element: 'hide' }
+  })
+  // ↻: hand over to the switcher in pixel-cat when it is installed (its /mods
+  // off puts this band away through /tycoon off and leaves a strip to come
+  // back from); on its own, putting the band away is all there is.
+  on('ui.press', { plugin: 'token-tycoon', element: 'cycle' }, async $ => {
+    let handed = false
+    try {
+      if ((await $.command.list()).some(c => c.name === 'mods')) {
+        await $.command.run({ command: 'mods', args: 'off' })
+        handed = true
+      }
+    } catch {
+      // No switcher to hand to.
+    }
+    if (!handed) await show($, false)
+    return { element: 'cycle' }
+  })
+  on('command.run', { command: 'tycoon' }, async ($, e) => {
+    const want = e.args.trim().toLowerCase()
+    const out = want === 'on' ? true : want === 'off' ? false : await read($, isHidden)
+    await show($, out)
+    return {
+      text: out
+        ? 'Token Tycoon is back above the prompt. /idle opens the shop.'
+        : 'Token Tycoon is put away. /tycoon brings it back; the ↻ button above the prompt switches between mods.',
+    }
   })
   on('ui.press', { plugin: 'token-tycoon', element: 'buy-agent' }, async $ => {
     await buyGen($, 'agent')
@@ -794,7 +830,8 @@ export const register: Register = on => {
                     : 'you own the whole shop'}
             </Text>
           </Box>
-          <Box flexShrink={0} alignSelf="flex-start">
+          <Box flexShrink={0} alignSelf="flex-start" flexDirection="column" alignItems="flex-end">
+            <Button key="cycle" label="↻ Off" plain dimColor onPress={ignorePress} />
             <Button key="hide" label="hide" plain dimColor onPress={ignorePress} />
           </Box>
         </Box>

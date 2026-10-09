@@ -88,9 +88,18 @@ export type Look = {
   hat: Hat
 }
 
+/**
+ * Where the ↻ switcher stands: this mod's hero (whichever pack), Token
+ * Tycoon's turn (this mod draws nothing), or off (only the strip that brings
+ * the next one back).
+ */
+export type Mode = 'hero' | 'tycoon' | 'off'
+
 export type Prefs = {
   /** absent in prefs saved before packs: loads as the 'cat' pack */
   pack: PackId
+  /** absent in prefs saved before the switcher: 'hero' */
+  mode?: Mode
   coat: Coat
   speed: Speed
   scene: Scene

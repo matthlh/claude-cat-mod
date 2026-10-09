@@ -22,6 +22,7 @@ It's Cookie Clicker with Claude's furniture.
   - while you're away your agents keep earning at half pace, up to 4 hours (8 with WebSearch), paid out when you come back
 - **Train a new model** (prestige): once you've earned 500K ✦ in a run, reset for a permanent point. Every point is +25% to prompts and agents, forever. Points scale with the square root of what you earned, so a 2M run is worth two.
 - **The band** above the prompt shows your tokens, income per second and per prompt, a frenzy countdown when one is on, and a hint: what you can buy right now, or what you're saving for. **Prompt ⚡** bottom-left, **Shop 🛒** bottom-right, a faint *hide* in the corner. Once the band has focus (ctrl+x tab in the terminal), `p` prompts.
+- **`/tycoon`** puts the game away or brings it back (`/tycoon off`, `/tycoon on`, or alone to flip), remembered across sessions. The **↻ Off** in the band's corner does the same, and when [Pixel Cat](../pixel-cat) is installed it hands over to the cat's ↻ switcher, which cycles Cat → Adventurer → Token Tycoon → Off. *hide* next to it is for this session only.
 - **`/idle`** opens the shop pane (and prints where you stand). Each shop button shows its hotkey; they work while the pane has focus.
 - **Saved across sessions** every 15 seconds and after each turn, play time included: the shop's Stats card shows how much you've gathered, how long you've played and how many frenzies you've had. Toasts for upgrades, milestones, frenzies and offline earnings; turn them off with the Popups button in the shop.
 

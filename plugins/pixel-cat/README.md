@@ -66,6 +66,12 @@ Each agent this session runs (a subagent, in the background or not, or a teammat
 
 ![The five summons, each in its two idle frames and its attack, and beside the hero at lane size](docs/adventurer-minions.svg)
 
+## Switching mods
+
+The **↻** button at the right of the band walks a loop: **Cat → Adventurer → Token Tycoon → Off → Cat**; its label names the next stop. On Token Tycoon's stop this band draws nothing and the game takes the spot (it's told through its `/tycoon` command, so it only joins the loop when it's installed). On Off, only a one-line **↻ Cat** strip stays, to come back from. The stop is saved with your prefs, so a new session opens where you left it.
+
+`/mods` does the same from the keyboard: alone it moves to the next stop, `/mods cat`, `/mods adventurer`, `/mods tycoon` or `/mods off` picks one. **Hide** and `/cat` still hide the cat for this session only, without moving the loop.
+
 ## Install
 
 Pixel Cat ships from the [matthlh/claude-mods](https://github.com/matthlh/claude-mods) marketplace, together with [Token Tycoon](../token-tycoon) and [Purple Dark](../purple-dark). You need a Claude Code version that supports mods (October 2026 or later); the same steps work on macOS, Linux and Windows. At the Claude Code prompt, type:
