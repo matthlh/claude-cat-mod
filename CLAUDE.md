@@ -10,6 +10,18 @@ One marketplace (`matthlh`), three Claude Code plugins under `plugins/`: `pixel-
 - Plain commit messages, no attribution trailers.
 - Bump `version` in a plugin's `plugin.json` with every change that should reach installs. The version pins the install: `claude plugin update` says "already at the latest version" and fetches nothing until it changes.
 
+## Branches
+
+`main` only moves by pull request. Each mod has a long-lived branch of its own, `pixel-cat`, `token-tycoon` and `purple-dark`, and work on a mod goes there:
+
+```bash
+git checkout pixel-cat && git merge --ff-only origin/main   # start level with main
+# ...commit...
+git push && gh pr create --base main --head pixel-cat
+```
+
+After the PR merges, fast-forward the mod branch to `main` again before the next change. A change that touches two mods at once (the ↻ switcher was one) gets a topic branch and one PR. Bump the plugin's `version` in the same PR.
+
 ## Check a change
 
 Use the Claude Code binary bundled with the desktop app (the `claude` on PATH may be too old for mods):
