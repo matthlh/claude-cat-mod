@@ -8,6 +8,7 @@ One marketplace (`matthlh`), three Claude Code plugins under `plugins/`: `pixel-
 - Move files with plain `git mv` commits, content edits in separate commits, so rename detection carries other branches across.
 - Don't add a `CLAUDE.md` inside a plugin folder; the validator warns and it isn't loaded. This file is the only one.
 - Plain commit messages, no attribution trailers.
+- Bump `version` in a plugin's `plugin.json` with every change that should reach installs. The version pins the install: `claude plugin update` says "already at the latest version" and fetches nothing until it changes.
 
 ## Check a change
 
